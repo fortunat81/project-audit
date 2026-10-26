@@ -1,0 +1,7 @@
+@traits	python server-code ai
+@not-traits	node mobile
+semgrep	findings	subprocess|shell	-
+osv-scanner	findings	flask	-
+pip-audit	findings	flask	-
+ruff	ran	-	-
+npm-audit	absent	-	-

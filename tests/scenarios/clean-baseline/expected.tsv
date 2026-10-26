@@ -1,0 +1,9 @@
+@traits	node
+@not-traits	expo web supabase firebase ai payments
+gitleaks	clean	-	-
+gitleaks-uncommitted	clean	-	-
+semgrep	clean	-	-
+exposed-keys	clean	-	-
+env-files	clean	-	-
+madge-circular	ran	-	-
+biggest-files	done	src/index\.js	-

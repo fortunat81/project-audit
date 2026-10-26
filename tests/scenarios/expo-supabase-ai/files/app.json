@@ -1,0 +1,1 @@
+{ "expo": { "name": "test-expo-app", "slug": "test-expo-app", "extra": { "openaiApiKey": "set-at-build-time" } } }

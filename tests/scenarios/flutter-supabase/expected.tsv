@@ -1,0 +1,8 @@
+@traits	flutter dart supabase mobile
+@not-traits	native-android native-ios node web
+supabase-rls	^skipped: no SQL migrations	-	-
+biggest-files	done	-	user\.g\.dart|android/|ios/
+exposed-keys	clean	-	-
+osv-scanner	ran	-	-
+mobsfscan	absent	-	-
+npm-audit	absent	-	-

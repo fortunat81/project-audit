@@ -1,0 +1,1 @@
+{ "name": "test-next-site", "dependencies": { "next": "15.0.3", "react": "19.0.0", "react-dom": "19.0.0", "firebase": "^11.0.0", "stripe": "^17.0.0", "openai": "^4.70.0" } }

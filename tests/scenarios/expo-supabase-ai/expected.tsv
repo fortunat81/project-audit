@@ -1,0 +1,21 @@
+# check	status (regex, or: ran / absent)	output must contain (regex or -)	output must NOT contain (regex or -)
+@traits	expo react-native supabase ai mobile typescript
+@not-traits	web native-android firebase
+gitleaks	findings	aws-access-token	-
+gitleaks-uncommitted	findings	config\.ts	-
+gitleaks-uncommitted	findings	\.env	-
+supabase-rls	findings	table 'bookings'	table 'profiles'
+supabase-rls	findings	anyone can insert	-
+supabase-service-role	findings	lib/admin\.ts	lib/supabase\.ts
+exposed-keys	findings	EXPO_PUBLIC_OPENAI_API_KEY	SUPABASE_ANON_KEY
+exposed-keys	findings	openaiApiKey	-
+env-files	findings	NOT GIT-IGNORED.*\.env	-
+biggest-files	done	-	android/
+semgrep	ran	-	-
+madge-circular	ran	-	-
+jscpd	done	-	-
+tsc	^skipped: dependencies not installed	-	-
+knip	^skipped: dependencies not installed	-	-
+firebase-rules	absent	-	-
+zizmor	absent	-	-
+live-site	absent	-	-

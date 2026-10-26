@@ -1,0 +1,7 @@
+@traits	static-site web
+@not-traits	node server-code
+gitleaks	clean	-	-
+exposed-keys	clean	-	-
+env-files	clean	-	-
+npm-audit	absent	-	-
+tsc	absent	-	-

@@ -1,0 +1,11 @@
+@traits	next web firebase payments ai server-code ci-github
+@not-traits	mobile supabase
+firebase-rules	findings	OPEN TO EVERYONE: firestore\.rules	-
+firebase-rules	findings	TEST MODE	-
+firebase-rules	findings	any signed-in user allowed: storage\.rules	-
+exposed-keys	findings	NEXT_PUBLIC_STRIPE_SECRET_KEY	lib/stripe\.ts
+env-files	findings	COMMITTED TO GIT.*\.env\.local	-
+zizmor	findings	-	-
+semgrep	ran	-	-
+supabase-rls	absent	-	-
+mobsfscan	absent	-	-
