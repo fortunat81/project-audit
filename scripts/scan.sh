@@ -9,6 +9,7 @@
 #   bash scan.sh --projects       list project folders (this one and any in subfolders); audit each (changes nothing)
 #   bash scan.sh --check          list missing tools and how to install them (changes nothing)
 #   bash scan.sh --install        install the missing tools this project needs (see below)
+#   bash scan.sh --install-deps   install this project's own packages (no install scripts) so tsc/eslint/knip can run
 #   bash scan.sh --status         compare with the last audit and recommend quick or full (changes nothing)
 #   bash scan.sh --version        branch, behind/ahead of GitHub, uncommitted files (runs git fetch only)
 #   bash scan.sh --add-gitignore  add "audit/" to this folder's .gitignore (the scan never edits it on its own)
@@ -370,6 +371,29 @@ if [ "${1:-}" = "--install" ]; then
   [ $N_FAIL -eq 0 ]; exit $?
 fi
 # -----------------------------------------------------------------------------
+
+# --- Install-deps mode -------------------------------------------------------
+#   bash scan.sh --install-deps    install this project's own packages so tsc, eslint and knip can run
+# Only creates node_modules/. Install scripts are switched off (--ignore-scripts) so a package
+# can't run code during the install, and package-lock.json / pnpm-lock.yaml are not rewritten.
+# Ask the user first: it downloads packages.
+if [ "${1:-}" = "--install-deps" ]; then
+  [ -f package.json ] || { echo "NOTHING: no package.json in this folder"; exit 0; }
+  [ -d node_modules ] && { echo "ALREADY: node_modules exists"; exit 0; }
+  if [ -f pnpm-lock.yaml ]; then
+    has pnpm || { echo "MANUAL: this project uses pnpm, which isn't installed (https://pnpm.io/installation)"; exit 1; }
+    echo "RUNNING: pnpm install --frozen-lockfile --ignore-scripts"
+    pnpm install --frozen-lockfile --ignore-scripts; exit $?
+  elif [ -f yarn.lock ] || [ -f bun.lockb ] || [ -f bun.lock ]; then
+    echo "MANUAL: this project uses yarn or bun; install its packages yourself (without running install scripts if you can)"; exit 1
+  fi
+  has npm || { echo "MANUAL: npm not found ($(install_hint npx))"; exit 1; }
+  if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+    echo "RUNNING: npm ci --ignore-scripts"; npm ci --ignore-scripts; exit $?
+  fi
+  echo "RUNNING: npm install --ignore-scripts --no-package-lock"
+  npm install --ignore-scripts --no-package-lock; exit $?
+fi
 
 # --- Status mode -------------------------------------------------------------
 # Compares the project now with the last saved audit and recommends quick or full.

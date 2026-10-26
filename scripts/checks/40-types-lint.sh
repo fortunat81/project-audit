@@ -19,7 +19,7 @@ mod_run() {
 
   # TypeScript: use the project's own compiler so versions and settings match
   if has_trait typescript; then
-    if has_trait node && [ ! -d node_modules ]; then skip tsc "dependencies not installed (run: npm install)"
+    if has_trait node && [ ! -d node_modules ]; then skip tsc "dependencies not installed (offer: scan.sh --install-deps)"
     elif [ -f node_modules/.bin/tsc ]; then
       note_version tsc "$(node_modules/.bin/tsc --version 2>/dev/null)"
       run --codes "1 2" --match 'error TS' tsc tsc.txt node_modules/.bin/tsc --noEmit
@@ -30,7 +30,7 @@ mod_run() {
   # ESLint: the project's own binary so its plugins and config load
   if has_trait node; then
     if ! eslint_config_found; then skip eslint "no ESLint config in the project (looked for eslint.config.*, .eslintrc*, package.json)"
-    elif [ ! -d node_modules ]; then skip eslint "dependencies not installed (run: npm install)"
+    elif [ ! -d node_modules ]; then skip eslint "dependencies not installed (offer: scan.sh --install-deps)"
     elif [ -f node_modules/.bin/eslint ]; then
       note_version eslint "$(node_modules/.bin/eslint --version 2>/dev/null)"
       run --json eslint eslint.json node_modules/.bin/eslint . -f json

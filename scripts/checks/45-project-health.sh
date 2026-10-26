@@ -13,7 +13,7 @@ mod_run() {
   fi
 
   # Unused files, exports and dependencies. Needs installed dependencies to read the project's config.
-  if [ ! -d node_modules ]; then skip knip "dependencies not installed (run: npm install)"
+  if [ ! -d node_modules ]; then skip knip "dependencies not installed (offer: scan.sh --install-deps)"
   else
     note_version knip "$KNIP_PKG"
     run --json knip knip.json npx --yes "$KNIP_PKG" --reporter json --no-progress
