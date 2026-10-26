@@ -39,12 +39,23 @@ is_git() { git rev-parse --git-dir >/dev/null 2>&1; }
 # Windows (Git Bash / MSYS / Cygwin)?
 is_windows() { case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) return 0 ;; *) return 1 ;; esac; }
 
-# A tool just installed with winget may not be on PATH until the terminal restarts;
-# winget puts command shortcuts in a "Links" folder, so look there too.
-if is_windows && [ -n "${LOCALAPPDATA:-}" ] && has cygpath; then
-  WINGET_LINKS="$(cygpath -u "$LOCALAPPDATA" 2>/dev/null)/Microsoft/WinGet/Links"
-  [ -d "$WINGET_LINKS" ] && PATH="$PATH:$WINGET_LINKS"
+# A tool just installed with winget or "pip --user" may not be on PATH until the terminal
+# restarts (or ever). Look in the places those installers use. Added at the END of PATH, so
+# nothing already installed gets replaced.
+add_path() { [ -d "$1" ] && case ":$PATH:" in *":$1:"*) ;; *) PATH="$PATH:$1" ;; esac; return 0; }
+if is_windows && has cygpath; then
+  if [ -n "${LOCALAPPDATA:-}" ]; then
+    WINGET_DIR="$(cygpath -u "$LOCALAPPDATA" 2>/dev/null)/Microsoft/WinGet"
+    add_path "$WINGET_DIR/Links"
+    # Some winget packages are not linked and stay in their own folder under Packages/
+    for d in "$WINGET_DIR"/Packages/Gitleaks.Gitleaks_* "$WINGET_DIR"/Packages/Google.OSVScanner_*; do add_path "$d"; done
+  fi
+  if [ -n "${APPDATA:-}" ]; then
+    for d in "$(cygpath -u "$APPDATA" 2>/dev/null)"/Python/Python*/Scripts; do add_path "$d"; done
+  fi
 fi
+add_path "$HOME/.local/bin"                                  # pip --user on Linux and pipx
+for d in "$HOME"/Library/Python/*/bin; do add_path "$d"; done # pip --user on macOS
 
 # A usable GNU-style timeout, printed as e.g. "timeout 300" (or nothing).
 # Windows has a different timeout.exe that only waits, so accept only GNU coreutils.
