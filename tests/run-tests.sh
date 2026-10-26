@@ -29,6 +29,10 @@ REPO="$(cd "$HERE/.." && pwd)"
 SCAN="$REPO/scripts/scan.sh"
 WORK="$REPO/.test-work"           # git-ignored; recreated on every run
 rm -rf "$WORK"; mkdir -p "$WORK"
+# Ignore it via .git/info/exclude, not .gitignore: scanners such as osv-scanner obey a parent
+# .gitignore and would skip the test projects entirely.
+EXC="$REPO/.git/info/exclude"
+grep -qx '.test-work/' "$EXC" 2>/dev/null || { mkdir -p "$(dirname "$EXC")"; echo '.test-work/' >> "$EXC"; }
 exec > >(tee "$HERE/last-run.txt") 2>&1
 
 rand_alnum() { LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$1"; }
