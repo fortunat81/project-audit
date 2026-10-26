@@ -41,6 +41,16 @@ mod_run() {
     done
     if has_trait expo || has_trait flutter; then set -- "$@" -x "./android/*" -x "./ios/*"; fi
     run --codes "1" --match 'warning' lizard lizard.txt lizard "$@" .
+    # lizard's JavaScript parser can crash on one odd file (unbalanced braces in vendored or
+    # generated code) and then reports nothing at all. Retry without JavaScript, and say so.
+    if tail -n 1 "$MANIFEST" | grep -Eq '^lizard[[:space:]]+failed-to-run' && grep -q 'Traceback' "$OUT/lizard.txt.err" 2>/dev/null; then
+      sed '$d' "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+      cp "$OUT/lizard.txt.err" "$OUT/lizard-crash.err"
+      run --codes "1" --match 'warning' lizard lizard.txt lizard "$@" -x "*.js" -x "*.jsx" -x "*.mjs" -x "*.cjs" .
+      if tail -n 1 "$MANIFEST" | grep -Eq '^lizard[[:space:]]+(clean|findings)'; then
+        awk -F'\t' -v OFS='\t' 'NR==FNR{n++; next} FNR==n{$2="partial: JavaScript files left out because lizard crashed on one (see lizard-crash.err); "$2} {print}' "$MANIFEST" "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+      fi
+    fi
   else skip lizard "not installed ($(install_hint lizard))"; fi
 
   # Biggest files and folder sizes (no external tool)

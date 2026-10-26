@@ -1,0 +1,2 @@
+# One unparsable file must not lose the whole complexity check.
+lizard	partial.*JavaScript	-	-
