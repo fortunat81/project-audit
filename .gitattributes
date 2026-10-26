@@ -1,0 +1,4 @@
+# Keep shell scripts with Unix line endings on every OS (Windows CRLF breaks bash)
+*.sh text eol=lf
+*.tsv text eol=lf
+*.md text eol=lf
