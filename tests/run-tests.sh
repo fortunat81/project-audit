@@ -5,6 +5,7 @@
 # Usage (from anywhere):
 #   bash tests/run-tests.sh                   all scenarios
 #   bash tests/run-tests.sh expo-supabase-ai  just one (or several)
+#   bash tests/run-tests.sh --install         first install every missing scanner, then test
 #   KEEP=1 bash tests/run-tests.sh            keep the test projects (in .test-work/) to inspect them
 #
 # Output is also saved to tests/last-run.txt.
@@ -38,6 +39,13 @@ PASS=0; FAIL=0; UNTESTED=0
 ok()   { PASS=$((PASS+1)); printf "  PASS      %s\n" "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf "  FAIL      %s\n" "$1"; [ -n "${2:-}" ] && printf "            %s\n" "$2"; }
 skip() { UNTESTED=$((UNTESTED+1)); printf "  UNTESTED  %s\n" "$1"; }
+
+if [ "${1:-}" = "--install" ]; then
+  shift
+  echo "=== Installing missing scanners"
+  bash "$SCAN" --install all
+  echo
+fi
 
 if [ $# -gt 0 ]; then SCENARIOS="$*"; else SCENARIOS="$(ls "$HERE/scenarios")"; fi
 

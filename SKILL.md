@@ -29,7 +29,7 @@ It prints the detected `PROFILE`, then one line per tool the applicable modules 
 
 - If nothing is `MISSING`, go to Step 1.
 - If something is `MISSING`, ask before doing anything. Use AskUserQuestion with one multi-select question, "Install these missing scanners?", one option per missing tool with its exact install command in the option's description. Unselected tools are skipped for this run. If AskUserQuestion isn't available, ask in plain text.
-- Install only what the user selected, one at a time, with exactly the printed command. Never use `sudo`. Never install anything unselected.
+- Install only what the user selected, with `bash <skill-dir>/scripts/scan.sh --install <tool> <tool> ...` (it runs the same commands `--check` printed, one at a time, and prints a summary). Never use `sudo`. Never install anything unselected. The user can also install everything this project needs themselves with `bash <skill-dir>/scripts/scan.sh --install`.
 - Never install Node.js, Flutter, Dart or another language SDK automatically. If `npx`, `flutter` or `dart` is `MISSING`, give the user the link and continue without those checks.
 - If an install fails, show the error in one or two lines and carry on without that tool.
 - On Windows the command may be a `winget` command. If winget asks to accept source or package terms, don't accept them for the user: tell them to run that one command once in PowerShell. Run `--check` again first (the script also looks in winget's links folder); only if the tool is still `MISSING`, tell the user to restart Claude Code.

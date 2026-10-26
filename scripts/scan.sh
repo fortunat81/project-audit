@@ -7,6 +7,7 @@
 #   bash scan.sh                  run the scan
 #   bash scan.sh --detect         show what was detected and which modules apply (changes nothing)
 #   bash scan.sh --check          list missing tools and how to install them (changes nothing)
+#   bash scan.sh --install        install the missing tools this project needs (see below)
 #   bash scan.sh --status         compare with the last audit and recommend quick or full (changes nothing)
 #   bash scan.sh --version        branch, behind/ahead of GitHub, uncommitted files (runs git fetch only)
 #   bash scan.sh --add-gitignore  add "audit/" to this folder's .gitignore (the scan never edits it on its own)
@@ -61,11 +62,20 @@ CONF_SKIP=",$(conf_get skip | tr -d ' '),"
 CONF_IGNORE="$(conf_get ignore | tr -d ' ')"
 conf_skipped() { case "$CONF_SKIP" in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 
+# Install command for a Python-based tool, using whatever Python installer exists here.
+py_install_cmd() {
+  if has pipx; then echo "pipx install $1"
+  elif has pip3; then echo "pip3 install --user $1"
+  elif has pip; then echo "pip install --user $1"
+  elif has py; then echo "py -m pip install --user $1"
+  else echo "install Python 3 first (https://www.python.org/downloads/), then: pipx install $1"; fi
+}
+
 install_hint() {
   case "$1" in
     semgrep)
       if has pipx; then echo "pipx install semgrep"; elif has brew; then echo "brew install semgrep"
-      elif has pip3; then echo "pip3 install --user semgrep"; else echo "install Python 3 first, then: pipx install semgrep"; fi ;;
+      else py_install_cmd semgrep; fi ;;
     gitleaks)
       if is_windows && has winget; then echo "winget install -e --id Gitleaks.Gitleaks"
       elif has brew; then echo "brew install gitleaks"
@@ -76,15 +86,16 @@ install_hint() {
       elif has brew; then echo "brew install osv-scanner"
       elif has go; then echo "go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest"
       else echo "download the release for your system from https://github.com/google/osv-scanner/releases and put it on your PATH"; fi ;;
-    pip-audit|ruff|lizard|zizmor|mobsfscan)
-      if [ "$1" != pip-audit ] && [ "$1" != lizard ] && [ "$1" != mobsfscan ] && has brew; then echo "brew install $1"
-      elif has pipx; then echo "pipx install $1"
-      elif has pip3; then echo "pip3 install --user $1"
-      else echo "install Python 3 first, then: pipx install $1"; fi ;;
+    ruff|zizmor)
+      if has pipx; then echo "pipx install $1"; elif has brew; then echo "brew install $1"; else py_install_cmd "$1"; fi ;;
+    pip-audit|lizard|mobsfscan)
+      py_install_cmd "$1" ;;
     npx)
       echo "install Node.js from https://nodejs.org (it provides npm and npx)" ;;
     flutter)
       echo "install the Flutter SDK from https://docs.flutter.dev/get-started/install" ;;
+    dart)
+      echo "install the Dart SDK from https://dart.dev/get-dart" ;;
     curl)
       echo "install curl (it ships with Git for Windows and macOS)" ;;
   esac
@@ -263,6 +274,54 @@ if [ "${1:-}" = "--check" ]; then
   done
   exit 0
 fi
+
+# --- Install mode ------------------------------------------------------------
+#   bash scan.sh --install                    install every MISSING tool this project needs
+#   bash scan.sh --install all                install every tool any module can use (for the tests)
+#   bash scan.sh --install semgrep gitleaks   install just these
+# Uses exactly the commands --check prints. Never uses sudo, and never installs a language
+# SDK (Node.js, Flutter, Dart): for those it prints the download link. The first time,
+# winget may ask you to accept its terms in the terminal; that's your choice to make.
+if [ "${1:-}" = "--install" ]; then
+  shift
+  ALL_TOOLS="gitleaks semgrep osv-scanner pip-audit ruff lizard zizmor mobsfscan"
+  if [ "${1:-}" = "all" ]; then WANT="$ALL_TOOLS"
+  elif [ $# -gt 0 ]; then WANT="$*"
+  else
+    WANT=""
+    for f in $(module_files); do
+      load_module "$f"
+      if mod_applies && type mod_tools >/dev/null 2>&1; then WANT="$WANT $(mod_tools)"; fi
+    done
+  fi
+  N_OK=0; N_NEW=0; N_FAIL=0; N_MANUAL=0; NEED_RESTART=0
+  for t in $(echo $WANT | tr ' ' '\n' | awk 'NF && !seen[$0]++'); do
+    if has "$t"; then echo "OK         $t (already installed)"; N_OK=$((N_OK+1)); continue; fi
+    if { [ -f "$SKIPFILE" ] && grep -qx "$t" "$SKIPFILE"; } || conf_skipped "$t"; then
+      echo "SKIPPED    $t (you chose not to use it)"; continue
+    fi
+    cmd="$(install_hint "$t")"
+    case "$cmd" in
+      install*|download*) echo "MANUAL     $t: $cmd"; N_MANUAL=$((N_MANUAL+1)); continue ;;
+    esac
+    echo "INSTALLING $t: $cmd"
+    # shellcheck disable=SC2086
+    if $cmd; then
+      N_NEW=$((N_NEW+1))
+      has "$t" || NEED_RESTART=1
+    else
+      echo "FAILED     $t (the error is above; the audit will skip this tool)"; N_FAIL=$((N_FAIL+1))
+    fi
+  done
+  echo
+  echo "INSTALL SUMMARY: $N_NEW installed, $N_OK already there, $N_MANUAL need a manual install, $N_FAIL failed"
+  if [ $NEED_RESTART -eq 1 ]; then
+    echo "Some new tools aren't visible in this terminal yet: close it and open a new one."
+    has pipx && echo "If they still aren't found after that, run: pipx ensurepath"
+  fi
+  [ $N_FAIL -eq 0 ]; exit $?
+fi
+# -----------------------------------------------------------------------------
 
 # --- Status mode -------------------------------------------------------------
 # Compares the project now with the last saved audit and recommends quick or full.

@@ -16,7 +16,13 @@ Update later:
 cd ~/.claude/skills/project-audit && git pull
 ```
 
-Then, in Claude Code inside any project, ask: "audit this project". The first run offers to install missing scanners (gitleaks, Semgrep, OSV-Scanner...) and asks before installing anything.
+Install the free scanners the auditor uses (once; it skips anything already installed):
+
+```bash
+bash ~/.claude/skills/project-audit/scripts/scan.sh --install all
+```
+
+Then, in Claude Code inside any project, ask: "audit this project". If a project needs a scanner that's missing, Claude asks before installing it. The install never uses admin rights, and never installs Node.js, Flutter or Dart for you (it prints the download link instead). On Windows, winget may ask you to accept its terms the first time.
 
 ## What's inside
 
@@ -31,6 +37,7 @@ Then, in Claude Code inside any project, ask: "audit this project". The first ru
 ## Test the auditor
 
 ```bash
+bash tests/run-tests.sh --install          # install missing scanners first, then run everything
 bash tests/run-tests.sh                    # all scenarios
 bash tests/run-tests.sh expo-supabase-ai   # one scenario
 KEEP=1 bash tests/run-tests.sh             # keep the temporary projects to inspect
