@@ -36,7 +36,8 @@ grep -qx '.test-work/' "$EXC" 2>/dev/null || { mkdir -p "$(dirname "$EXC")"; ech
 exec > >(tee "$HERE/last-run.txt") 2>&1
 
 rand_alnum() { LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$1"; }
-rand_upper() { LC_ALL=C tr -dc 'A-Z0-9' < /dev/urandom | head -c "$1"; }
+# AWS key ids use base32 (A-Z, 2-7); gitleaks' aws-access-token rule only matches those
+rand_upper() { LC_ALL=C tr -dc 'A-Z2-7' < /dev/urandom | head -c "$1"; }
 export -f rand_alnum rand_upper
 
 PASS=0; FAIL=0; UNTESTED=0
