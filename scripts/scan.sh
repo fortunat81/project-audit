@@ -6,6 +6,7 @@
 # Usage (run from the project root):
 #   bash scan.sh                  run the scan
 #   bash scan.sh --detect         show what was detected and which modules apply (changes nothing)
+#   bash scan.sh --projects       list project folders (this one and any in subfolders); audit each (changes nothing)
 #   bash scan.sh --check          list missing tools and how to install them (changes nothing)
 #   bash scan.sh --install        install the missing tools this project needs (see below)
 #   bash scan.sh --status         compare with the last audit and recommend quick or full (changes nothing)
@@ -244,6 +245,35 @@ finish_detect() {
 detect
 finish_detect
 
+# ------------------------------------------------------------ subprojects ----
+# Project files can sit in subfolders (backend/, app/, web/) instead of the folder you run
+# this from. Tools that need to run inside a project (dependency audit, tsc, eslint, pip-audit)
+# only see the one they are started in, so list the others and tell the user to audit each.
+ROOT_IS_PROJECT=no
+if [ -f package.json ] || [ -f pyproject.toml ] || [ -f Pipfile ] || [ -f setup.py ] \
+   || [ -f pubspec.yaml ] || [ -f composer.json ] || any_file 'requirements*.txt'; then ROOT_IS_PROJECT=yes; fi
+
+PROJECT_FILE_RE='(^|/)(package\.json|pyproject\.toml|requirements[^/]*\.txt|Pipfile|setup\.py|pubspec\.yaml|composer\.json)$'
+NOT_PRODUCT_RE='(^|/)(node_modules|test|tests|__tests__|e2e|example|examples|sample|samples|doc|docs|fixtures|fixture|demo|demos|vendor|android|ios)(/|$)'
+
+# Folders up to 3 levels down that hold project files, one per line (empty if none).
+# When this folder is itself a project, test/example/docs folders and monorepo packages are
+# left out: they are covered from here or aren't the product.
+find_subprojects() {
+  local files dirs
+  if is_git; then files="$(project_files)"
+  else files="$(find . -maxdepth 4 -type f -not -path '*/node_modules/*' -not -path './audit/*' 2>/dev/null | sed 's|^\./||')"; fi
+  dirs="$(echo "$files" | grep -E "$PROJECT_FILE_RE" | grep '/' | sed 's|/[^/]*$||' | awk -F/ 'NF<=3' | sort -u)"
+  [ -z "$dirs" ] && return 0
+  if [ "$ROOT_IS_PROJECT" = yes ]; then
+    dirs="$(echo "$dirs" | grep -Ev "$NOT_PRODUCT_RE")"
+    if has_trait monorepo; then dirs="$(echo "$dirs" | grep -Ev '^(packages|apps|libs|services)/')"; fi
+  fi
+  [ -n "$dirs" ] && echo "$dirs"
+  return 0
+}
+SUBPROJECTS="$(find_subprojects | head -20 | tr '\n' ' ' | sed 's/ $//')"
+
 # ---------------------------------------------------------------- modules ----
 # Each file in checks/ defines:
 #   mod_applies   return 0 if this module is relevant to the detected project
@@ -262,6 +292,13 @@ if [ "${1:-}" = "--detect" ]; then
     load_module "$f"
     if mod_applies; then echo "MODULE=$MOD_NAME applies"; else echo "MODULE=$MOD_NAME not-applicable"; fi
   done
+  exit 0
+fi
+
+if [ "${1:-}" = "--projects" ]; then
+  [ "$ROOT_IS_PROJECT" = yes ] && echo "PROJECT=."
+  for d in $SUBPROJECTS; do echo "PROJECT=$d"; done
+  [ "$ROOT_IS_PROJECT" = no ] && [ -z "$SUBPROJECTS" ] && echo "PROJECT=. (no project files found; only the general checks apply)"
   exit 0
 fi
 
@@ -531,6 +568,14 @@ run() {
 result() {
   if [ -s "$OUT/$2" ]; then record "$1" "findings" "-" "$2"; else record "$1" "clean" "-" "$2"; fi
 }
+
+# Project folders this run does not cover must show up as a gap, not vanish silently
+if [ -n "$SUBPROJECTS" ]; then
+  DIM="general"
+  echo "==> subprojects (partial: not scanned)"
+  record subprojects "partial: more project folders found: $SUBPROJECTS (the checks that need a project folder ran only here; audit each folder separately)" "-" "-"
+  echo "subprojects=$SUBPROJECTS" >> "$OUT/meta.txt"
+fi
 
 # Run every applicable module
 APPLIED=""; NOT_APPLIED=""

@@ -1,0 +1,4 @@
+# Project files live in subfolders: nothing at the top level, but the gap must be visible.
+@not-traits	python node
+subprojects	partial.*backend.*web	-	-
+osv-scanner	absent	-	-
