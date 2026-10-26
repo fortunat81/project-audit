@@ -5,7 +5,9 @@
 # Usage (from anywhere):
 #   bash tests/run-tests.sh                   all scenarios
 #   bash tests/run-tests.sh expo-supabase-ai  just one (or several)
-#   KEEP=1 bash tests/run-tests.sh            keep the temporary projects to inspect them
+#   KEEP=1 bash tests/run-tests.sh            keep the test projects (in .test-work/) to inspect them
+#
+# Output is also saved to tests/last-run.txt.
 #
 # Each scenario folder has:
 #   files/         the fake project (copied to a temp folder and committed to a fresh git repo)
@@ -22,8 +24,11 @@
 
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCAN="$(cd "$HERE/.." && pwd)/scripts/scan.sh"
-WORK="$(mktemp -d 2>/dev/null || mktemp -d -t audittest)"
+REPO="$(cd "$HERE/.." && pwd)"
+SCAN="$REPO/scripts/scan.sh"
+WORK="$REPO/.test-work"           # git-ignored; recreated on every run
+rm -rf "$WORK"; mkdir -p "$WORK"
+exec > >(tee "$HERE/last-run.txt") 2>&1
 
 rand_alnum() { LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$1"; }
 rand_upper() { LC_ALL=C tr -dc 'A-Z0-9' < /dev/urandom | head -c "$1"; }
