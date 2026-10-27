@@ -11,6 +11,7 @@ sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, os.path.join(SCRIPTS, "audit_checks"))
 import audit_digest       # noqa: E402
 import audit_report_html  # noqa: E402
+import audit_scan         # noqa: E402
 import m80_live_site      # noqa: E402
 
 
@@ -75,7 +76,22 @@ def digest():
     say(os.path.isfile(os.path.join(folder, "findings.tsv")) and os.path.isfile(os.path.join(folder, "digest.txt")), "both output files are written")
 
 
+def coverage():
+    b = audit_scan.status_bucket
+    say([b(x) for x in ("clean", "findings", "done", "timeout")] == ["clean", "findings", "done", "timeout"], "plain statuses count in their own column")
+    say(b("failed-to-run (could not reach)") == "failed" and b("partial: left out") == "partial", "failed and partial statuses count by their start")
+    say(b("skipped: not installed") == "skipped" and b("unavailable") == "skipped" and b("anything else") == "skipped", "skipped, unavailable and unknown statuses count as skipped")
+    rows = [["a", "clean"], ["b", "findings"], ["c", "failed-to-run (x)"], ["d", "skipped: y"], ["e", "timeout"], ["f", "partial: z"], ["g", "done"]]
+    lines = audit_scan.coverage_lines(rows, "go(5)")
+    say(lines[0] == "COVERAGE: 7 checks: 1 clean, 1 with findings, 1 measured, 1 partial, 1 failed, 1 timed out, 1 skipped/unavailable", "the coverage line counts every column", lines[0])
+    say(sum(1 for ln in lines if ln.startswith("  - ")) == 4 and "INCOMPLETE" in lines[1], "the checks that did not fully run are listed", lines)
+    say(lines[-1].startswith("NO DEDICATED CHECKS for: go(5)"), "languages with no dedicated checks are named last", lines[-1])
+    lines = audit_scan.coverage_lines([["a", "clean"]], "")
+    say(len(lines) == 1, "a fully clean run has just the one line", lines)
+
+
 if __name__ == "__main__":
     live_site()
     markdown()
     digest()
+    coverage()

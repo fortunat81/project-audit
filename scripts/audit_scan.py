@@ -67,22 +67,21 @@ def detect_project(ctx):
     audit_detect.find_subprojects(ctx)
 
 
-def write_meta(ctx):
-    meta = ["date=%s" % time.strftime("%Y-%m-%d"), "epoch=%d" % int(time.time()),
-            "traits=%s" % " ".join(t for t in ctx.traits if t != "live-url"), "languages=%s" % ctx.langs,
-            "unhandled_languages=%s" % (ctx.unhandled or "none"), "live_url=%s" % (ctx.audit_url or "none")]
-    if ctx.is_git():
-        ahead = ctx.git("rev-list", "--left-right", "--count", "HEAD...@{u}")
-        meta += ["commit=%s" % (ctx.git("rev-parse", "--verify", "-q", "HEAD")[1].strip() or "none"),
-                 "branch=%s" % (ctx.git("rev-parse", "--abbrev-ref", "HEAD")[1].strip() or "none"),
-                 "uncommitted_files=%d" % len([ln for ln in ctx.git("status", "--porcelain", "--untracked-files=no")[1].splitlines() if ln]),
-                 "untracked_files=%d" % len([ln for ln in ctx.git("ls-files", "--others", "--exclude-standard")[1].splitlines() if ln and not ln.startswith("audit/")]),
-                 "ahead_behind_upstream=%s" % ("/".join(ahead[1].split()) if ahead[0] == 0 else "unknown"),
-                 "audit_folder_ignored=%s" % ("yes" if ctx.git("check-ignore", "-q", "audit/")[0] == 0 else "no")]
-    else:
-        meta.append("commit=none")
-    ctx.write("meta.txt", "".join(m + "\n" for m in meta))
-    # Provenance: what exactly was audited, with which settings, and did it stay the same?
+def _git_meta(ctx):
+    """Meta lines about the repository (empty set of facts outside git)."""
+    if not ctx.is_git():
+        return ["commit=none"]
+    ahead = ctx.git("rev-list", "--left-right", "--count", "HEAD...@{u}")
+    return ["commit=%s" % (ctx.git("rev-parse", "--verify", "-q", "HEAD")[1].strip() or "none"),
+            "branch=%s" % (ctx.git("rev-parse", "--abbrev-ref", "HEAD")[1].strip() or "none"),
+            "uncommitted_files=%d" % len([ln for ln in ctx.git("status", "--porcelain", "--untracked-files=no")[1].splitlines() if ln]),
+            "untracked_files=%d" % len([ln for ln in ctx.git("ls-files", "--others", "--exclude-standard")[1].splitlines() if ln and not ln.startswith("audit/")]),
+            "ahead_behind_upstream=%s" % ("/".join(ahead[1].split()) if ahead[0] == 0 else "unknown"),
+            "audit_folder_ignored=%s" % ("yes" if ctx.git("check-ignore", "-q", "audit/")[0] == 0 else "no")]
+
+
+def _write_provenance(ctx):
+    """What exactly was audited, with which settings, and did it stay the same?"""
     settings = read_text(os.path.join(HERE, "gitleaks-extra.toml")) + read_text(os.path.join(ctx.root, ".audit.conf")) + "semgrep_config=p/default\n"
     describe = subprocess.run(["git", "-C", HERE, "rev-parse", "--short", "HEAD"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     ctx.meta("fingerprint_start=%s" % ctx.fingerprint())
@@ -92,78 +91,86 @@ def write_meta(ctx):
     ctx.meta("os=%s" % ctx.os_name())
 
 
-def coverage(ctx):
-    """How much of the audit actually ran. Written to coverage.txt and printed."""
-    rows = [ln.split("\t") for ln in read_text(ctx.path("manifest.tsv")).splitlines()[1:] if ln]
-    c = f = d = t = x = p = s = 0
+def write_meta(ctx):
+    meta = ["date=%s" % time.strftime("%Y-%m-%d"), "epoch=%d" % int(time.time()),
+            "traits=%s" % " ".join(t for t in ctx.traits if t != "live-url"), "languages=%s" % ctx.langs,
+            "unhandled_languages=%s" % (ctx.unhandled or "none"), "live_url=%s" % (ctx.audit_url or "none")]
+    ctx.write("meta.txt", "".join(m + "\n" for m in meta + _git_meta(ctx)))
+    _write_provenance(ctx)
+
+
+def status_bucket(status):
+    """Which column of the coverage line a manifest status counts in."""
+    if status in ("clean", "findings", "done", "timeout"):
+        return status
+    if status.startswith("failed-to-run"):
+        return "failed"
+    if status.startswith("partial"):
+        return "partial"
+    return "skipped"
+
+
+def coverage_lines(rows, unhandled):
+    """The coverage text for manifest rows (each a list: tool, status, ...) and the languages with no dedicated checks."""
+    n = {k: 0 for k in ("clean", "findings", "done", "timeout", "failed", "partial", "skipped")}
     for r in rows:
-        st = r[1]
-        if st == "clean":
-            c += 1
-        elif st == "findings":
-            f += 1
-        elif st == "done":
-            d += 1
-        elif st == "timeout":
-            t += 1
-        elif st.startswith("failed-to-run"):
-            x += 1
-        elif st.startswith("partial"):
-            p += 1
-        else:
-            s += 1
-    lines = ["COVERAGE: %d checks: %d clean, %d with findings, %d measured, %d partial, %d failed, %d timed out, %d skipped/unavailable" % (len(rows), c, f, d, p, x, t, s)]
+        n[status_bucket(r[1])] += 1
+    lines = ["COVERAGE: %d checks: %d clean, %d with findings, %d measured, %d partial, %d failed, %d timed out, %d skipped/unavailable" % (
+        len(rows), n["clean"], n["findings"], n["done"], n["partial"], n["failed"], n["timeout"], n["skipped"])]
     gaps = [r for r in rows if r[1].startswith(("failed-to-run", "skipped", "unavailable", "partial")) or r[1] == "timeout"]
     if gaps:
         lines.append("INCOMPLETE: some checks did not run fully. A clean result does not cover them:")
         lines += ["  - %s: %s" % (r[0], r[1]) for r in gaps]
-    if ctx.unhandled:
-        lines.append("NO DEDICATED CHECKS for: %s (only the generic security, secret and dependency checks cover these files)" % ctx.unhandled)
+    if unhandled:
+        lines.append("NO DEDICATED CHECKS for: %s (only the generic security, secret and dependency checks cover these files)" % unhandled)
+    return lines
+
+
+def coverage(ctx):
+    """How much of the audit actually ran. Written to coverage.txt and printed."""
+    rows = [ln.split("\t") for ln in read_text(ctx.path("manifest.tsv")).splitlines()[1:] if ln]
+    lines = coverage_lines(rows, ctx.unhandled)
     ctx.write("coverage.txt", "".join(ln + "\n" for ln in lines))
     print("\n".join(lines))
 
 
-def scan(ctx):
-    audit_dir = os.path.join(ctx.root, "audit")
+def _new_run_folder(audit_dir):
     base = os.path.join(audit_dir, audit_core.now_stamp())
     out, n = base, 1
     while os.path.exists(out):
         n += 1
         out = "%s-%d" % (base, n)
     os.makedirs(out)
-    ctx.out = out
-    ctx.write("manifest.tsv", "tool\tstatus\texit\toutput\tdimension\n")
-    ctx.write("versions.txt", "")
-    write_meta(ctx)
+    return out
 
+
+def _record_trust_and_subprojects(ctx):
     ctx.meta("time_limit=%ds" % audit_core.TIMEOUT_SECONDS)
+    ctx.meta("untrusted=%s" % ("yes" if ctx.untrusted else "no"))
     if ctx.untrusted:
-        ctx.meta("untrusted=yes")
         ctx.dim = "general"
         ctx.record("trust-mode", "done: untrusted mode, checks that run the project's own code were skipped and secret-looking environment variables were removed", "-", "-")
-    else:
-        ctx.meta("untrusted=no")
     if ctx.is_git() and ctx.git("check-ignore", "-q", "audit/")[0] != 0:
         print("WARNING: audit/ is not git-ignored. Don't commit it. Run: bash scan.sh --add-gitignore")
-
     # Project folders this run does not cover must show up as a gap, not vanish silently
-    if ctx.subprojects and os.environ.get("AUDIT_ALL") == "1" and not os.environ.get("AUDIT_SUB"):
-        ctx.dim = "general"
+    if not ctx.subprojects:
+        return
+    ctx.dim = "general"
+    if os.environ.get("AUDIT_ALL") == "1" and not os.environ.get("AUDIT_SUB"):
         print("==> subprojects (scanned separately by --all)")
         ctx.record("subprojects", "done: each project folder was scanned separately by --all: %s" % ctx.subprojects, "-", "-")
-        ctx.meta("subprojects=%s" % ctx.subprojects)
-    elif ctx.subprojects:
-        ctx.dim = "general"
+    else:
         print("==> subprojects (partial: not scanned)")
         ctx.record("subprojects", "partial: more project folders found: %s (the checks that need a project folder ran only here; audit each folder separately)" % ctx.subprojects, "-", "-")
-        ctx.meta("subprojects=%s" % ctx.subprojects)
+    ctx.meta("subprojects=%s" % ctx.subprojects)
 
-    # Run every applicable module
+
+def _run_modules(ctx):
+    """Runs every applicable check module. A broken or crashing module shows up as a gap, never vanishes."""
     applied, not_applied = [], []
     for name, mod, err in load_modules():
         ctx.dim = "general"
         if mod is None:
-            # A broken module must show up as a gap, not vanish silently
             ctx.record("module:%s" % name, "failed-to-run (module file is broken: %s)" % err, "-", "-")
             continue
         if not mod.applies(ctx):
@@ -178,25 +185,23 @@ def scan(ctx):
     ctx.meta("modules_run=%s" % " ".join(applied))
     ctx.meta("modules_not_applicable=%s" % " ".join(not_applied))
 
-    # Did the project change while the scanners were running? Then the results may mix two versions.
+
+def _check_consistency(ctx):
+    """Did the project change while the scanners were running? Then the results may mix two versions."""
     ctx.refresh_files()
     start = [ln for ln in read_text(ctx.path("meta.txt")).splitlines() if ln.startswith("fingerprint_start=")][0].split("=", 1)[1]
     end = ctx.fingerprint()
     ctx.meta("fingerprint_end=%s" % end)
-    if start == end:
-        ctx.meta("consistent=yes")
-    else:
-        ctx.meta("consistent=no")
+    ctx.meta("consistent=%s" % ("yes" if start == end else "no"))
+    if start != end:
         ctx.dim = "general"
         ctx.record("consistency", "partial: project files changed while the scan was running, so results may mix two versions (run the scan again)", "-", "-")
     if ctx.is_git():
         ctx.meta("commit_end=%s" % (ctx.git("rev-parse", "--verify", "-q", "HEAD")[1].strip() or "none"))
 
-    os.makedirs(audit_dir, exist_ok=True)
-    with open(os.path.join(audit_dir, "latest.txt"), "w", encoding="utf-8", newline="\n") as f:
-        f.write(posix(out) + "\n")
 
-    # A compact digest of the findings (findings.tsv, digest.txt) and one web page for the run (report.html)
+def _write_digest_and_page(out):
+    """A compact digest of the findings (findings.tsv, digest.txt) and one web page for the run (report.html)."""
     try:
         import audit_digest
         with contextlib.redirect_stdout(io.StringIO()):
@@ -211,10 +216,23 @@ def scan(ctx):
     except Exception:
         pass
 
+
+def scan(ctx):
+    audit_dir = os.path.join(ctx.root, "audit")
+    ctx.out = _new_run_folder(audit_dir)
+    ctx.write("manifest.tsv", "tool\tstatus\texit\toutput\tdimension\n")
+    ctx.write("versions.txt", "")
+    write_meta(ctx)
+    _record_trust_and_subprojects(ctx)
+    _run_modules(ctx)
+    _check_consistency(ctx)
+    with open(os.path.join(audit_dir, "latest.txt"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(posix(ctx.out) + "\n")
+    _write_digest_and_page(ctx.out)
     coverage(ctx)
     print()
     print("Profile: %s" % " ".join(ctx.traits))
-    print("Done. Results saved in: %s" % posix(out))
+    print("Done. Results saved in: %s" % posix(ctx.out))
     print(read_text(ctx.path("manifest.tsv")), end="")
     return 0
 

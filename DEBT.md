@@ -17,8 +17,9 @@ is broken; these are things that make the project harder to change or less prove
 
 4. **Scanner and rule versions drift.** Python scanners are installed unpinned and Semgrep downloads its
    rules at scan time. Idea: a pinned tools environment (`scan.sh --setup`, `uv`) and saved rules.
-5. **Long functions in our own code.** The audit tool's own scan flags a few (for example `render_markdown`,
-   `compute_verdict`, `check_report`, `write_outputs`). Split when touching them.
+5. **Long functions in our own code.** After three clean-up rounds, 19 functions are still over the
+   complexity limit of 15 (run `python -m lizard scripts -l python -C 15 -w`). The worst left: `astro_security`,
+   `_supabase_rls`, `Ctx.run`, `install_hint`, `check_fields`, `check_report`. Split when touching them.
 6. **French and English tables are written by hand.** `tests/translate_test.py` checks both exist and match
    the numbering; it can't judge the translation quality.
 
