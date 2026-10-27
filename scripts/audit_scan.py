@@ -333,14 +333,30 @@ def open_file(page):
     print("Open this file in a browser: %s" % page)
 
 
+def find_run_dir(rest, cwd):
+    """The audit run folder for the helper commands: the one given, else the folder we are standing in when it is a
+    run folder, else the latest run of the project (looked up from here and then from each parent folder)."""
+    if rest:
+        return rest[0]
+    here = os.path.abspath(cwd)
+    if os.path.isfile(os.path.join(here, "manifest.tsv")) and os.path.isfile(os.path.join(here, "meta.txt")):
+        return here
+    while True:
+        latest = os.path.join(here, "audit", "latest.txt")
+        if os.path.isfile(latest):
+            return read_text(latest).strip()
+        parent = os.path.dirname(here)
+        if parent == here:
+            return ""
+        here = parent
+
+
 def delegate(mode, rest):
     """Modes that live in their own scripts."""
-    run_dir = rest[0] if rest else ""
-    if not run_dir and os.path.isfile(os.path.join("audit", "latest.txt")):
-        run_dir = read_text(os.path.join("audit", "latest.txt")).strip()
+    run_dir = find_run_dir(rest, os.getcwd())
     if mode == "--verify-report":
         import audit_verify
-        return audit_verify.main(["audit_verify"] + rest)
+        return audit_verify.main(["audit_verify"] + (rest or ([run_dir] if run_dir else [])))
     if mode == "--verdict":
         import audit_verdict
         return audit_verdict.main(["audit_verdict", run_dir])

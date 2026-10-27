@@ -511,7 +511,7 @@ def main(argv):
         f.write(page)
     if os.path.isfile(os.path.join(argv[1], "AUDIT.md")):
         audit_progress.write(argv[1], "done")   # an open progress tab moves on to the full report
-    print("report: %s" % os.path.join(argv[1], "report.html"))
+    print("report: %s" % os.path.abspath(os.path.join(argv[1], "report.html")).replace("\\", "/"))
     return 0
 
 

@@ -236,6 +236,8 @@ def status(ctx):
     holes = _failed_checks(last)
     print("LAST_AUDIT=%s" % meta.get("date", ""))
     print("LAST_FOLDER=%s" % last.replace("\\", "/"))
+    if not os.path.isfile(os.path.join(last, "scores.json")):
+        print("LAST_AUDIT_REPORT=none (the last run has no scores.json: it was a scan only or was cut short, so there are no scores to compare with)")
     print("PREV_FOLDER=%s" % prev.replace("\\", "/"))
     print("DAYS_SINCE=%d" % days)
     print("COMMITS_SINCE=%s" % commits)

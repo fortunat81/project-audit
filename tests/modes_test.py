@@ -111,6 +111,28 @@ def main():
     out = run_status(root)
     say("PROFILE_CHANGED=yes" in out and "RECOMMEND=full" in out, "a different set of traits since the last audit is noticed", out)
 
+    root = project()
+    fake_audit(root, git(root, "rev-parse", "--short", "HEAD"))
+    out = run_status(root)
+    say("LAST_AUDIT_REPORT=none" in out, "an earlier run with no scores.json is said to have nothing to compare with", out)
+
+    # the helper commands find the run folder from the project root, from inside the run folder, or from a subfolder
+    import audit_scan
+    root = project()
+    folder = fake_audit(root, "abc")
+    with open(os.path.join(root, "audit", "latest.txt"), "w", newline="\n") as f:
+        f.write(folder.replace("\\", "/") + "\n")
+
+    def same(a, b):
+        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+    sub = os.path.join(root, "src")
+    os.makedirs(sub)
+    say(same(audit_scan.find_run_dir([], root), folder), "no argument: the latest run from the project root")
+    say(same(audit_scan.find_run_dir([], folder), folder), "no argument, inside the run folder: that folder")
+    say(same(audit_scan.find_run_dir([], sub), folder), "no argument, inside a subfolder: the latest run of the project")
+    say(same(audit_scan.find_run_dir([folder], sub), folder), "an explicit folder wins")
+    say(audit_scan.find_run_dir([], tempfile.mkdtemp()) == "", "nothing found: empty")
+
 
 if __name__ == "__main__":
     main()

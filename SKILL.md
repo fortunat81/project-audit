@@ -41,6 +41,8 @@ It prints the detected `PROFILE`, then one line per tool the applicable modules 
 
 ## Step 1: Version, profile, live site and depth
 
+**The questions in this step are not optional.** In an interactive run, ask them with AskUserQuestion before Step 2 and wait for the answers. Never answer one yourself ("the folder name says it's a test", "`--status` recommends full") and never skip one because the answer looks obvious: the answers choose the depth, the checklist level and whether the project's own code may be run. That includes the "is this your own project?" question from the trust boundary when you are unsure, and the owner-only `[Y]` checklist items in Step 6, which you ask once, in plain words, before writing the verdict. Only a scheduled or unattended run skips them, and then the report says so at the top. If you ever skip a question in an interactive run, say which one and why in the report's first section.
+
 ### Which version of the code
 
 The audit always reads the working copy on disk, including uncommitted edits and new files. If the project is a git repo:
