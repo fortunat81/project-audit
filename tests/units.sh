@@ -2,7 +2,7 @@
 # and the translation code. Each unit_* function prints PASS/FAIL/UNTESTED lines like a scenario.
 # Sourced by run-tests.sh (uses ok/bad/skip, make_report, WORK, HERE from lib.sh).
 
-UNITS="report-check verdict-check html-check serve-check translate-check engine-check"
+UNITS="report-check verdict-check html-check serve-check translate-check engine-check core-check detect-check digest-check"
 
 # Runs a Python test file that prints "OK: label" / "BAD: label | detail" and turns each line into PASS/FAIL
 run_python_lines() {   # run_python_lines <prefix> <file>
@@ -33,7 +33,7 @@ unit_report_check() {
   rm -rf "$RC"
   make_report "$RC/good" launch-with-limits 2 full 0
   expect_report "a correct report passes" "$RC/good" ok
-  make_report "$RC/note" launch-with-limits 2 full 0; sed -i 's/semgrep (findings)/semgrep (findings, see note)/' "$RC/note/AUDIT.md"
+  make_report "$RC/note" launch-with-limits 2 full 0; sedi 's/semgrep (findings)/semgrep (findings, see note)/' "$RC/note/AUDIT.md"
   expect_report "a status followed by a note is read correctly" "$RC/note" ok
   make_report "$RC/fixok" launch-with-limits 2 full 0; printf '{"fixes":[{"id":"P-1","title":"Pin actions","who":"claude","change":"x","verify":"y"}]}' > "$RC/fixok/fixes.json"
   expect_report "a well-formed fixes.json passes" "$RC/fixok" ok
@@ -41,19 +41,19 @@ unit_report_check() {
   expect_report "a bad 'who' and a repeated fix id are caught" "$RC/fixbad" fail
   make_report "$RC/fixsecret" launch-with-limits 2 full 0; printf '{"fixes":[{"id":"P-1","title":"a","who":"you","change":"use ghp_%s"}]}' "$(rand_alnum 36)" > "$RC/fixsecret/fixes.json"
   expect_report "a secret-looking value inside fixes.json is caught" "$RC/fixsecret" fail
-  make_report "$RC/counts" launch-with-limits 2 full 0; sed -i 's/"pass":1/"pass":3/' "$RC/counts/scores.json"
+  make_report "$RC/counts" launch-with-limits 2 full 0; sedi 's/"pass":1/"pass":3/' "$RC/counts/scores.json"
   expect_report "marks that differ from scores.json are caught" "$RC/counts" fail
-  make_report "$RC/status" launch-with-limits 2 full 0; sed -i 's/gitleaks (clean)/gitleaks (findings)/' "$RC/status/AUDIT.md"
+  make_report "$RC/status" launch-with-limits 2 full 0; sedi 's/gitleaks (clean)/gitleaks (findings)/' "$RC/status/AUDIT.md"
   expect_report "a tool status that differs from the manifest is caught" "$RC/status" fail
   make_report "$RC/ghost" launch-with-limits 2 full 0; printf '| Quality | 80 | low | madge (clean) | x |\n' >> "$RC/ghost/AUDIT.md"
   expect_report "a tool that never ran listed as a source is caught" "$RC/ghost" fail
   make_report "$RC/secret" launch-with-limits 2 full 0; printf 'token ghp_%s\n' "$(rand_alnum 36)" >> "$RC/secret/AUDIT.md"
   expect_report "a secret-looking value in the report is caught" "$RC/secret" fail
-  make_report "$RC/green3" no-blocking-problems 3 full 0; sed -i 's/Launch with limits/No blocking problems found/' "$RC/green3/AUDIT.md"
+  make_report "$RC/green3" no-blocking-problems 3 full 0; sedi 's/Launch with limits/No blocking problems found/' "$RC/green3/AUDIT.md"
   expect_report "a green verdict at Level 3 is caught" "$RC/green3" fail
-  make_report "$RC/greenfail" no-blocking-problems 1 full 1; sed -i 's/Launch with limits/No blocking problems found/' "$RC/greenfail/AUDIT.md"
+  make_report "$RC/greenfail" no-blocking-problems 1 full 1; sedi 's/Launch with limits/No blocking problems found/' "$RC/greenfail/AUDIT.md"
   expect_report "a green verdict with a failed item is caught" "$RC/greenfail" fail
-  make_report "$RC/phrase" launch-with-limits 2 full 0; sed -i 's/Launch with limits/Looks fine/' "$RC/phrase/AUDIT.md"
+  make_report "$RC/phrase" launch-with-limits 2 full 0; sedi 's/Launch with limits/Looks fine/' "$RC/phrase/AUDIT.md"
   expect_report "a report that does not state the verdict is caught" "$RC/phrase" fail
 }
 
@@ -161,4 +161,23 @@ unit_engine_check() {
   case "$out" in *"REFUSED"*) ok "untrusted mode refuses to install packages" ;; *) bad "untrusted mode refuses to install packages" "$out" ;; esac
   out="$(cd "$P" && bash "$SCAN" --no-such-mode 2>&1)"; code=$?
   if [ $code -eq 2 ] && case "$out" in *"Unknown option"*) true ;; *) false ;; esac; then ok "an unknown option is refused"; else bad "an unknown option is refused" "exit $code: $out"; fi
+}
+
+# --- One function at a time: the tool runner, trait detection and the findings digest (Python test files)
+unit_core_check() {
+  echo "=== core-check (scripts/audit_core.py: how a tool's result becomes a status)"
+  need_python "tool runner" || return 0
+  run_python_lines "core" core_test.py
+}
+
+unit_detect_check() {
+  echo "=== detect-check (scripts/audit_detect.py: what each kind of project is recognised as)"
+  need_python "trait detection" || return 0
+  run_python_lines "detect" detect_test.py
+}
+
+unit_digest_check() {
+  echo "=== digest-check (scripts/audit_digest.py: scanner output in, findings out)"
+  need_python "findings digest" || return 0
+  run_python_lines "digest" digest_test.py
 }

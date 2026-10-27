@@ -32,6 +32,10 @@ if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck -s bash -S error $SH_FILES >/tmp/shellcheck.out 2>&1; then pass "ShellCheck: no errors"; else fail "ShellCheck found errors (see below)"; head -30 /tmp/shellcheck.out; fi
 else note "ShellCheck not installed (CI runs it)"; fi
 
+# GNU-only habits that break on macOS (BSD sed has a different -i; grep -P does not exist)
+gnu="$(grep -nE "sed -i|grep -[a-zA-Z]*P" $SH_FILES | grep -v "^tests/lint.sh" || true)"
+if [ -n "$gnu" ]; then fail "GNU-only commands (sed -i, grep -P) break on macOS: $gnu"; else pass "no GNU-only sed -i or grep -P in the scripts"; fi
+
 echo "Python"
 PY_FILES="$(find scripts tests -name '*.py' -not -path '*/node_modules/*' -not -path '*/.test-work/*' | sort)"
 bad=0

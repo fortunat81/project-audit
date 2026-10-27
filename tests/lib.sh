@@ -14,6 +14,9 @@ export -f rand_alnum rand_upper
 # Lets a test check that untrusted mode hides secret-looking variables
 export FAKE_SECRET_TOKEN_FOR_TESTS="not-a-real-secret"
 
+# Portable in-place edit: BSD sed (macOS) needs a different -i syntax than GNU sed, so avoid -i.  sedi 's/a/b/' file
+sedi() { local f="$2"; sed "$1" "$f" > "$f.tmp" && mv "$f.tmp" "$f"; }
+
 ok()   { printf "  PASS      %s\n" "$1"; }
 bad()  { printf "  FAIL      %s\n" "$1"; [ -n "${2:-}" ] && printf "            %s\n" "$2"; return 0; }
 skip() { printf "  UNTESTED  %s\n" "$1"; }
