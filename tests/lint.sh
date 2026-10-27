@@ -29,7 +29,7 @@ done
 [ $bad -eq 0 ] && pass "$(echo "$SH_FILES" | wc -l | tr -d ' ') shell scripts parse and use LF"
 if command -v shellcheck >/dev/null 2>&1; then
   # shellcheck disable=SC2086
-  if shellcheck -S error $SH_FILES >/tmp/shellcheck.out 2>&1; then pass "ShellCheck: no errors"; else fail "ShellCheck found errors (see below)"; head -30 /tmp/shellcheck.out; fi
+  if shellcheck -s bash -S error $SH_FILES >/tmp/shellcheck.out 2>&1; then pass "ShellCheck: no errors"; else fail "ShellCheck found errors (see below)"; head -30 /tmp/shellcheck.out; fi
 else note "ShellCheck not installed (CI runs it)"; fi
 
 echo "Python"
