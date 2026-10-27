@@ -213,25 +213,19 @@ def read_manifest(folder):
     return rows
 
 
-def write_outputs(folder, findings, manifest):
-    with open(os.path.join(folder, "findings.tsv"), "w", encoding="utf-8", newline="\n") as f:
-        f.write("id\tsource\tseverity\trule\tfile\tline\tcount\n")
-        for x in findings:
-            f.write("\t".join(str(x[k]) for k in ("id", "source", "severity", "rule", "file", "line", "count")) + "\n")
-
-    by_sev = {}
+def _digest_lines(folder, findings, manifest):
+    """The text of digest.txt, as a list of lines."""
+    by_sev, counts, per_file = {}, {}, {}
     for x in findings:
         by_sev[x["severity"]] = by_sev.get(x["severity"], 0) + 1
-    counts = {}
-    for x in findings:
         counts[x["source"]] = counts.get(x["source"], 0) + 1
-
-    out = ["DIGEST of %s" % os.path.basename(os.path.normpath(folder))]
+        if x["file"]:
+            per_file.setdefault(x["file"], set()).add(x["source"])
     detail = ", ".join("%d %s" % (by_sev[s], s) for s in ("critical", "high", "medium", "low", "info") if by_sev.get(s))
-    out.append("%d distinct findings%s" % (len(findings), ": " + detail if findings else ""))
-    out.append("(IDs are stable between runs. Open the file and line before calling anything confirmed. No secret values appear here.)")
-    out.append("")
-    out.append("NEEDS ATTENTION FIRST (critical and high, up to 30):")
+    out = ["DIGEST of %s" % os.path.basename(os.path.normpath(folder)),
+           "%d distinct findings%s" % (len(findings), ": " + detail if findings else ""),
+           "(IDs are stable between runs. Open the file and line before calling anything confirmed. No secret values appear here.)",
+           "", "NEEDS ATTENTION FIRST (critical and high, up to 30):"]
     top = [x for x in findings if x["severity"] in ("critical", "high")][:30]
     for x in top:
         out.append("  %s  %-8s %-22s %s  %s%s%s" % (x["id"], x["severity"], x["source"], x["rule"], x["file"],
@@ -239,31 +233,30 @@ def write_outputs(folder, findings, manifest):
                                                  "  (x%d)" % x["count"] if x["count"] > 1 else ""))
     if not top:
         out.append("  none")
-    out.append("")
-    per_file = {}
-    for x in findings:
-        if x["file"]:
-            per_file.setdefault(x["file"], set()).add(x["source"])
+    out += ["", "FILES FLAGGED BY MORE THAN ONE TOOL (read these first):"]
     multi = sorted((kv for kv in per_file.items() if len(kv[1]) > 1), key=lambda kv: -len(kv[1]))[:10]
-    out.append("FILES FLAGGED BY MORE THAN ONE TOOL (read these first):")
-    for file, sources in multi:
-        out.append("  %s  <- %s" % (file, ", ".join(sorted(sources))))
+    out += ["  %s  <- %s" % (file, ", ".join(sorted(sources))) for file, sources in multi]
     if not multi:
         out.append("  none")
-    out.append("")
-    out.append("BY TOOL (status from manifest.tsv, findings counted here):")
+    out += ["", "BY TOOL (status from manifest.tsv, findings counted here):"]
     for tool, status in manifest:
         n = counts.get(tool)
         out.append("  %-24s %-70s %s" % (tool, status[:70], "%d finding(s)" % n if n is not None else ""))
-    out.append("")
-    out.append("NOT FULLY COVERED:")
+    out += ["", "NOT FULLY COVERED:"]
     gaps = [(t, s) for t, s in manifest if re.match(r"^(failed-to-run|timeout|skipped|unavailable|partial)", s)]
-    for tool, status in gaps:
-        out.append("  %s: %s" % (tool, status))
+    out += ["  %s: %s" % (tool, status) for tool, status in gaps]
     if not gaps:
         out.append("  nothing")
+    return out
+
+
+def write_outputs(folder, findings, manifest):
+    with open(os.path.join(folder, "findings.tsv"), "w", encoding="utf-8", newline="\n") as f:
+        f.write("id\tsource\tseverity\trule\tfile\tline\tcount\n")
+        for x in findings:
+            f.write("\t".join(str(x[k]) for k in ("id", "source", "severity", "rule", "file", "line", "count")) + "\n")
     with open(os.path.join(folder, "digest.txt"), "w", encoding="utf-8", newline="\n") as f:
-        f.write("\n".join(out) + "\n")
+        f.write("\n".join(_digest_lines(folder, findings, manifest)) + "\n")
 
 
 def main(argv):

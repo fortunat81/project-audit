@@ -2,7 +2,7 @@
 # and the translation code. Each unit_* function prints PASS/FAIL/UNTESTED lines like a scenario.
 # Sourced by run-tests.sh (uses ok/bad/skip, make_report, WORK, HERE from lib.sh).
 
-UNITS="report-check verdict-check html-check serve-check translate-check engine-check core-check detect-check digest-check modes-check"
+UNITS="report-check verdict-check html-check serve-check translate-check engine-check core-check detect-check digest-check modes-check helpers-check"
 
 # Runs a Python test file that prints "OK: label" / "BAD: label | detail" and turns each line into PASS/FAIL
 run_python_lines() {   # run_python_lines <prefix> <file>
@@ -186,4 +186,10 @@ unit_modes_check() {
   echo "=== modes-check (scripts/audit_modes.py: when --status recommends a full audit)"
   need_python "status mode" || return 0
   run_python_lines "modes" modes_test.py
+}
+
+unit_helpers_check() {
+  echo "=== helpers-check (live-site rules, the Markdown renderer, the digest text)"
+  need_python "helper functions" || return 0
+  run_python_lines "helpers" helpers_test.py
 }

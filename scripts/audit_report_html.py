@@ -208,92 +208,97 @@ def _inline(text):
     return re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", link, text)
 
 
+LIST_ITEM = re.compile(r"^(\s*)([-*]|\d+[.)])\s+(.*)$")
+TABLE_DIVIDER = re.compile(r"^\s*\|?[\s:|-]+\|[\s:|-]*$")
+
+
+# Each block reader takes the lines and the position of the block's first line, and returns (html, next position).
+def _code_block(lines, i):
+    code, i = [], i + 1
+    while i < len(lines) and not lines[i].strip().startswith("```"):
+        code.append(lines[i])
+        i += 1
+    return "<pre><code>%s</code></pre>" % html.escape("\n".join(code)), i + 1
+
+
+def _cells(line):
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def _is_table_start(lines, i):
+    return lines[i].lstrip().startswith("|") and i + 1 < len(lines) and bool(TABLE_DIVIDER.match(lines[i + 1])) and "-" in lines[i + 1]
+
+
+def _table(lines, i):
+    head, i, rows = _cells(lines[i]), i + 2, []
+    while i < len(lines) and lines[i].lstrip().startswith("|"):
+        rows.append(_cells(lines[i]))
+        i += 1
+    return ('<div class="tablewrap"><table><thead><tr>%s</tr></thead><tbody>%s</tbody></table></div>' % (
+        "".join("<th>%s</th>" % _inline(c) for c in head),
+        "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % _inline(c) for c in r) for r in rows)), i)
+
+
+def _list(lines, i):
+    first = LIST_ITEM.match(lines[i])
+    ordered, base, items = first.group(2)[0].isdigit(), len(first.group(1)), []
+    while i < len(lines):
+        mm = LIST_ITEM.match(lines[i])
+        if mm and len(mm.group(1)) <= base + 1:
+            items.append(mm.group(3))
+        elif lines[i].startswith(" " * (base + 2)) and lines[i].strip() and not mm:
+            items[-1] += " " + lines[i].strip()   # a wrapped line of the same item
+        elif mm:   # a nested item: keep it as part of the parent line
+            items[-1] += " &middot; " + mm.group(3)
+        else:
+            break
+        i += 1
+    tag = "ol" if ordered else "ul"
+    return "<%s>%s</%s>" % (tag, "".join("<li>%s</li>" % _inline(t) for t in items), tag), i
+
+
+def _quote(lines, i):
+    quote = []
+    while i < len(lines) and lines[i].lstrip().startswith(">"):
+        quote.append(lines[i].lstrip()[1:].strip())
+        i += 1
+    return "<blockquote>%s</blockquote>" % _inline(" ".join(quote)), i
+
+
 def render_markdown(text):
     lines = text.replace("\r\n", "\n").split("\n")
-    out, i, n = [], 0, len(lines)
-    para = []
+    out, para, i = [], [], 0
 
-    def flush():
-        if para:
+    def block(html_text, next_i):
+        if para:   # the paragraph being collected ends where a block starts
             out.append("<p>%s</p>" % _inline(" ".join(para)))
             para.clear()
+        if html_text:
+            out.append(html_text)
+        return next_i
 
-    def cells(line):
-        return [c.strip() for c in line.strip().strip("|").split("|")]
-
-    while i < n:
+    while i < len(lines):
         line = lines[i]
+        heading = re.match(r"^(#{1,4})\s+(.*)$", line)
         if line.strip().startswith("```"):
-            flush()
+            i = block(*_code_block(lines, i))
+        elif not line.strip():
+            i = block("", i + 1)
+        elif heading:
+            level = len(heading.group(1)) + 1
+            i = block("<h%d>%s</h%d>" % (level, _inline(heading.group(2)), level), i + 1)
+        elif re.match(r"^\s*(-{3,}|\*{3,})\s*$", line):
+            i = block("<hr>", i + 1)
+        elif _is_table_start(lines, i):
+            i = block(*_table(lines, i))
+        elif LIST_ITEM.match(line):
+            i = block(*_list(lines, i))
+        elif line.lstrip().startswith(">"):
+            i = block(*_quote(lines, i))
+        else:
+            para.append(line.strip())
             i += 1
-            code = []
-            while i < n and not lines[i].strip().startswith("```"):
-                code.append(lines[i])
-                i += 1
-            i += 1
-            out.append("<pre><code>%s</code></pre>" % html.escape("\n".join(code)))
-            continue
-        if not line.strip():
-            flush()
-            i += 1
-            continue
-        m = re.match(r"^(#{1,4})\s+(.*)$", line)
-        if m:
-            flush()
-            level = len(m.group(1)) + 1
-            out.append("<h%d>%s</h%d>" % (level, _inline(m.group(2)), level))
-            i += 1
-            continue
-        if re.match(r"^\s*(-{3,}|\*{3,})\s*$", line):
-            flush()
-            out.append("<hr>")
-            i += 1
-            continue
-        if line.lstrip().startswith("|") and i + 1 < n and re.match(r"^\s*\|?[\s:|-]+\|[\s:|-]*$", lines[i + 1]) and "-" in lines[i + 1]:
-            flush()
-            head = cells(line)
-            i += 2
-            rows = []
-            while i < n and lines[i].lstrip().startswith("|"):
-                rows.append(cells(lines[i]))
-                i += 1
-            out.append('<div class="tablewrap"><table><thead><tr>%s</tr></thead><tbody>%s</tbody></table></div>' % (
-                "".join("<th>%s</th>" % _inline(c) for c in head),
-                "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % _inline(c) for c in r) for r in rows)))
-            continue
-        m = re.match(r"^(\s*)([-*]|\d+[.)])\s+(.*)$", line)
-        if m:
-            flush()
-            ordered = m.group(2)[0].isdigit()
-            base = len(m.group(1))
-            items = []
-            while i < n:
-                mm = re.match(r"^(\s*)([-*]|\d+[.)])\s+(.*)$", lines[i])
-                if mm and len(mm.group(1)) <= base + 1:
-                    items.append(mm.group(3))
-                    i += 1
-                elif lines[i].startswith(" " * (base + 2)) and lines[i].strip() and not re.match(r"^\s*([-*]|\d+[.)])\s", lines[i]):
-                    items[-1] += " " + lines[i].strip()   # a wrapped line of the same item
-                    i += 1
-                elif mm:   # a nested item: keep it as part of the parent line
-                    items[-1] += " &middot; " + mm.group(3)
-                    i += 1
-                else:
-                    break
-            tag = "ol" if ordered else "ul"
-            out.append("<%s>%s</%s>" % (tag, "".join("<li>%s</li>" % _inline(t) for t in items), tag))
-            continue
-        if line.lstrip().startswith(">"):
-            flush()
-            quote = []
-            while i < n and lines[i].lstrip().startswith(">"):
-                quote.append(lines[i].lstrip()[1:].strip())
-                i += 1
-            out.append("<blockquote>%s</blockquote>" % _inline(" ".join(quote)))
-            continue
-        para.append(line.strip())
-        i += 1
-    flush()
+    block("", i)
     return "\n".join(out)
 
 

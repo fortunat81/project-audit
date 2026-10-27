@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""Tests for small pure helpers: the live-site header and address rules, the Markdown renderer behind the
+report page, and the digest text. Prints 'OK: label' or 'BAD: label | detail' per check."""
+import os
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SCRIPTS = os.path.join(HERE, "..", "scripts")
+sys.path.insert(0, SCRIPTS)
+sys.path.insert(0, os.path.join(SCRIPTS, "audit_checks"))
+import audit_digest       # noqa: E402
+import audit_report_html  # noqa: E402
+import m80_live_site      # noqa: E402
+
+
+def say(ok, label, detail=""):
+    print(("OK: " if ok else "BAD: ") + label + ("" if ok else " | " + str(detail)))
+
+
+def live_site():
+    full = ["strict-transport-security: max-age=1", "content-security-policy: default-src 'self'; frame-ancestors 'none'",
+            "x-content-type-options: nosniff", "referrer-policy: no-referrer", "server: nginx"]
+    out = m80_live_site.header_lines(full)
+    say(sum(1 for ln in out if ln.startswith("OK")) == 5 and not any(ln.startswith("WARN") for ln in out), "a site with all the headers gets no warnings", out)
+    say("INFO reveals: server: nginx" in out, "a server banner is reported as information")
+    out = m80_live_site.header_lines([])
+    say(sum(1 for ln in out if ln.startswith("WARN")) == 5, "a site with no headers gets five warnings (four headers and clickjacking)", out)
+    out = m80_live_site.header_lines(["x-frame-options: deny"])
+    say("OK   clickjacking protection (x-frame-options or frame-ancestors)" in out, "x-frame-options alone counts as clickjacking protection")
+
+    u = m80_live_site.script_url
+    base = ("https", "example.com", "https://example.com")
+    say(u("https://cdn.x.com/a.js?v=2", *base) == "https://cdn.x.com/a.js", "a full address keeps its host and loses its query string")
+    say(u("//cdn.x.com/a.js", *base) == "https://cdn.x.com/a.js", "a protocol-relative address takes the site's scheme")
+    say(u("/static/a.js", *base) == "https://example.com/static/a.js", "a root-relative address takes the site's host")
+    say(u("a.js", *base) == "https://example.com/a.js", "a relative address is added to the site address")
+
+
+def markdown():
+    r = audit_report_html.render_markdown
+    say(r("# Title") == "<h2>Title</h2>", "a heading starts one level lower (the page has its own h1)", r("# Title"))
+    say(r("one\ntwo\n\nthree") == "<p>one two</p>\n<p>three</p>", "lines join into paragraphs, a blank line starts the next", r("one\ntwo\n\nthree"))
+    say("<script>" not in r("<script>alert(1)</script>"), "HTML in the text is escaped")
+    say("href" not in r("[x](javascript:alert(1))"), "a javascript: link is not turned into a link", r("[x](javascript:alert(1))"))
+    say('href="https://a.com"' in r("[x](https://a.com)"), "a normal link becomes a link")
+    say(r("- a\n- b") == "<ul><li>a</li><li>b</li></ul>", "dashes make a list", r("- a\n- b"))
+    say(r("1. a\n2. b").startswith("<ol>"), "numbers make an ordered list")
+    say("<li>a wrapped &middot; nested</li>" in r("- a\n  wrapped\n  - nested") or "a wrapped" in r("- a\n  wrapped\n  - nested"), "a wrapped line stays in its item", r("- a\n  wrapped\n  - nested"))
+    table = r("| a | b |\n|---|---|\n| 1 | 2 |")
+    say("<th>a</th><th>b</th>" in table and "<td>1</td><td>2</td>" in table, "a table has a header row and body rows", table)
+    say(r("```\n<b>\n```") == "<pre><code>&lt;b&gt;</code></pre>", "code blocks are shown as text", r("```\n<b>\n```"))
+    say(r("> a\n> b") == "<blockquote>a b</blockquote>", "quote lines join into one quote")
+    say(r("text\n---\nmore") == "<p>text</p>\n<hr>\n<p>more</p>", "three dashes make a rule and end the paragraph", r("text\n---\nmore"))
+    say(r("a\r\nb") == "<p>a b</p>", "Windows line endings read the same")
+
+
+def digest():
+    findings = [
+        {"id": "F-1", "source": "semgrep", "severity": "high", "rule": "r1", "file": "a.js", "line": 3, "count": 2},
+        {"id": "F-2", "source": "eslint", "severity": "low", "rule": "r2", "file": "a.js", "line": "", "count": 1},
+    ]
+    manifest = [("semgrep", "findings"), ("eslint", "findings"), ("knip", "skipped: not installed"), ("gitleaks", "clean")]
+    lines = audit_digest._digest_lines(os.path.join("x", "2026-01-01_000000"), findings, manifest)
+    text = "\n".join(lines)
+    say(lines[0] == "DIGEST of 2026-01-01_000000" and "2 distinct findings: 1 high, 1 low" in text, "the digest names the run and counts findings by severity", lines[:3])
+    say("F-1  high     semgrep" in text and "a.js:3  (x2)" in text, "a high finding is listed first with its line and repeat count", text)
+    say("a.js  <- eslint, semgrep" in text, "a file flagged by two tools is listed")
+    say("knip: skipped: not installed" in text and "gitleaks:" not in text.split("NOT FULLY COVERED:")[1], "only the tools that did not fully run are listed as gaps")
+    lines = audit_digest._digest_lines("run", [], [("gitleaks", "clean")])
+    text = "\n".join(lines)
+    say("0 distinct findings" in text and text.count("  none") == 2 and "  nothing" in text, "an empty result says none and nothing", text)
+    folder = tempfile.mkdtemp(prefix="digest")
+    audit_digest.write_outputs(folder, findings, manifest)
+    say(os.path.isfile(os.path.join(folder, "findings.tsv")) and os.path.isfile(os.path.join(folder, "digest.txt")), "both output files are written")
+
+
+if __name__ == "__main__":
+    live_site()
+    markdown()
+    digest()
