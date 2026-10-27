@@ -55,6 +55,21 @@ unit_report_check() {
   expect_report "a green verdict with a failed item is caught" "$RC/greenfail" fail
   make_report "$RC/phrase" launch-with-limits 2 full 0; sedi 's/Launch with limits/Looks fine/' "$RC/phrase/AUDIT.md"
   expect_report "a report that does not state the verdict is caught" "$RC/phrase" fail
+  # independent review: full mode needs the record, the three agents and a section in the report
+  make_report "$RC/noreview" launch-with-limits 2 full 0; sedi 's/,"independent_review":{[^}]*}//' "$RC/noreview/scores.json"
+  expect_report "a full review with no independent-review record is caught" "$RC/noreview" fail
+  make_report "$RC/twoagents" launch-with-limits 2 full 0; sedi 's/"security","architecture","scalability"/"security","architecture"/' "$RC/twoagents/scores.json"
+  expect_report "an independent review missing one of the three agents is caught" "$RC/twoagents" fail
+  make_report "$RC/nosection" launch-with-limits 2 full 0; sedi 's/## Independent review/## Notes/' "$RC/nosection/AUDIT.md"
+  expect_report "an independent review not shown in the report is caught" "$RC/nosection" fail
+  make_report "$RC/skipped" launch-with-limits 2 full 0
+  sedi 's/"independent_review":{[^}]*}/"independent_review":{"status":"not_done","reason":"subagents unavailable in this session"}/' "$RC/skipped/scores.json"
+  sedi 's/## Independent review/## Notes/' "$RC/skipped/AUDIT.md"
+  expect_report "an honest 'not done, and why' is allowed (with a warning)" "$RC/skipped" ok
+  make_report "$RC/noreason" launch-with-limits 2 full 0; sedi 's/"independent_review":{[^}]*}/"independent_review":{"status":"not_done"}/' "$RC/noreason/scores.json"
+  expect_report "'not done' with no reason is caught" "$RC/noreason" fail
+  make_report "$RC/quickok" launch-with-limits 2 quick 0
+  expect_report "a quick scan needs no independent review" "$RC/quickok" ok
 }
 
 # --- Verdict rules: the same inputs always give the same verdict (scripts/audit_verdict.py)

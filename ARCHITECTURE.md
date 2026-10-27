@@ -42,7 +42,7 @@ scan.sh  ->  audit/<run>/        ->  Claude (SKILL.md)       ->  AUDIT.md, score
 | `scripts/audit_i18n.py` | English/French tables: the 43 checklist items, finding-rule descriptions, check statuses |
 | `scripts/audit_translate.py`, `audit_claude.py` | Asks Claude Code (print mode) for the other language; shared launcher |
 | `scripts/audit_serve.py` | Local server (127.0.0.1) behind `scan.sh --serve`: starts Claude on approved fixes or a translation |
-| `reviews/*.md` | Review checklists per trait; `release-gate.md` is the launch checklist, verdict rules and maintenance plan |
+| `reviews/*.md` | Review checklists per trait; `release-gate.md` is the launch checklist, verdict rules and maintenance plan; `independent-review.md` is the full-mode brief for the three specialist agents (security, architecture, scalability) and the refuter |
 | `tests/` | See below |
 
 ## Data in `audit/<run>/`

@@ -27,7 +27,12 @@ make_report() {
   local d="$1"; mkdir -p "$d"
   printf 'tool\tstatus\texit\toutput\tdimension\nsemgrep\tfindings\t0\ts.json\tsecurity\ngitleaks\tclean\t0\tg.json\tsecurity\n' > "$d/manifest.tsv"
   local mark="✅"; [ "$5" -gt 0 ] && mark="❌"
+  local review=""   # a full review records its independent review; a quick scan does not run one
+  if [ "$4" = "full" ]; then
+    review=',"independent_review":{"status":"done","agents":["security","architecture","scalability"],"refuted":0,"found_by_both":1,"independent_only":1,"tools_only":0}'
+  fi
   printf '# Audit\n\nVerdict: Launch with limits\n\n| 1 | No secrets | %s | T | gitleaks clean |\n| 2 | Backups | ❓ | Y | not answered |\n\n| Security | 70 | medium | semgrep (findings), gitleaks (clean) | ok |\n' "$mark" > "$d/AUDIT.md"
-  printf '{"date":"2026-01-01","mode":"%s","rubric":2,"level":%s,"verdict":"%s","confirmed":{"critical":0,"high":0},"checklist":{"pass":%s,"fail":%s,"partial":0,"not_verified":1,"not_applicable":0},"scores":{"architecture":80,"modularity":80,"spaghettiness":80,"security":70,"quality":80,"scalability":null,"documentation":60}}' \
-    "$4" "$3" "$2" "$([ "$5" -gt 0 ] && echo 0 || echo 1)" "$5" > "$d/scores.json"
+  if [ "$4" = "full" ]; then printf '\n## Independent review\n\nSecurity, architecture and scalability agents read the code without the tool findings.\n' >> "$d/AUDIT.md"; fi
+  printf '{"date":"2026-01-01","mode":"%s","rubric":2,"level":%s,"verdict":"%s","confirmed":{"critical":0,"high":0},"checklist":{"pass":%s,"fail":%s,"partial":0,"not_verified":1,"not_applicable":0},"scores":{"architecture":80,"modularity":80,"spaghettiness":80,"security":70,"quality":80,"scalability":null,"documentation":60}%s}' \
+    "$4" "$3" "$2" "$([ "$5" -gt 0 ] && echo 0 || echo 1)" "$5" "$review" > "$d/scores.json"
 }

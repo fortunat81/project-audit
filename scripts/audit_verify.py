@@ -151,6 +151,45 @@ def check_report(r, scores, report_text, manifest_text, counts, verdict, mode, l
             r.ok("tool statuses in AUDIT.md match manifest.tsv")
 
 
+REVIEW_AGENTS = ("security", "architecture", "scalability")
+REVIEW_HEADING = re.compile(r"^#{1,6}\s*independent review", re.I | re.M)
+
+
+def check_independent_review(r, scores, report_text, mode):
+    """A full review runs three specialist agents that read the code without the tool findings. The record in
+    scores.json must say so (or say honestly that it was not done and why), and the report must show it."""
+    if mode != "full":
+        return
+    rec = scores.get("independent_review")
+    if not isinstance(rec, dict):
+        r.fail('a full review needs "independent_review" in scores.json (status done, or not_done with a reason)')
+        return
+    status = rec.get("status")
+    if status == "not_done":
+        reason = rec.get("reason")
+        if isinstance(reason, str) and reason.strip():
+            r.warn("independent review was not done: %s" % reason.strip())
+        else:
+            r.fail('independent_review is not_done but gives no "reason"')
+        return
+    if status != "done":
+        r.fail('independent_review.status must be done or not_done (found: %s)' % (status if status is not None else "none"))
+        return
+    agents = rec.get("agents")
+    missing = [a for a in REVIEW_AGENTS if not (isinstance(agents, list) and a in agents)]
+    if missing:
+        r.fail("independent review is missing the %s agent(s)" % ", ".join(missing))
+        return
+    counts = ("refuted", "found_by_both", "independent_only", "tools_only")
+    if not all(isinstance(rec.get(k), int) and rec[k] >= 0 for k in counts):
+        r.fail("independent_review needs whole-number counts: %s" % ", ".join(counts))
+        return
+    if not REVIEW_HEADING.search(report_text):
+        r.fail('AUDIT.md has no "Independent review" section although scores.json says it was done')
+        return
+    r.ok("independent review recorded (%s) and shown in the report" % ", ".join(REVIEW_AGENTS))
+
+
 def check_translations(r, folder, scores):
     """AUDIT.<lang>.md files must say the same thing as AUDIT.md: same checklist marks, same verdict."""
     primary = audit_translate.primary_language(folder)
@@ -312,6 +351,7 @@ def main(argv):
     mode, level, verdict, counts = check_fields(r, scores)
     if report_text is not None:
         check_report(r, scores, report_text, read(os.path.join(folder, "manifest.tsv")), counts, verdict, mode, level)
+        check_independent_review(r, scores, report_text, mode)
     check_fixes(r, folder)
     if report_text is not None:
         check_translations(r, folder, scores)

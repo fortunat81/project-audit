@@ -137,15 +137,12 @@ Secrets: `gitleaks` scans history, `gitleaks-uncommitted` scans staged, unstaged
 Load the checklist in `reviews/` for each detected trait that has one: `ai`, `server-code`, `web` (also when a live URL was checked), `supabase`, `firebase`, `mobile`, `payments`, `wordpress`, plus `personal-data` when the user said so or you find forms or tables collecting personal data.
 
 - **Quick mode:** do only the "Always" section of each loaded checklist. Skip the rest of this step. Mark architecture and documentation "low confidence, not independently reviewed" and scalability "not assessed".
-- **Full mode:** do every section of each loaded checklist, then review a fixed scope and say in the report what you did and didn't read:
-  1. Entry points (app root, routes, server setup) and the 5 to 10 biggest files from `biggest-files.txt`.
-  2. Files that appear in more than one tool's findings.
-  3. What tools can't judge: whether layers and boundaries make sense (UI, data, business logic), scalability patterns, and whether the docs match the code (check three concrete claims from the README or `CLAUDE.md`).
-  4. Trace user or request input from each entry point to where it lands (database, shell, file system, AI prompt, HTML). The free Semgrep doesn't follow data across files.
-  5. A random sample of 3 to 5 other source files nobody flagged: `git ls-files --cached --others --exclude-standard | grep -E '\.(ts|tsx|js|jsx|py|dart|swift|kt|php|vue|svelte|astro)$' | sort -R | head -5`. Note how many had real problems the tools missed.
-  6. For `UNHANDLED` languages, read 3 to 5 of those files too, since no dedicated tool covered them.
+- **Full mode:** do every section of each loaded checklist, then run the independent review. Load `reviews/independent-review.md` and follow it: three specialist agents (security, architecture, scalability) read the code **without seeing any tool result**, answer fixed yes/no probes with a file, line and quote for each "no", and a fourth agent tries to refute what they report. You then open every cited line yourself and merge their findings with the tool findings into three groups (found by both, independent only, tools only). Do not read the code a second time in free form; the specialists replace that, and you check what they cite. Do the parts they don't cover yourself and say in the report what was and wasn't read:
+  1. Files that appear in more than one tool's findings: open them (the specialists never saw the tool results).
+  2. For `UNHANDLED` languages, read 3 to 5 of those files, since no dedicated tool covered them.
+  3. If you cannot start subagents, do not pretend: write `"independent_review": {"status": "not_done", "reason": "..."}` in `scores.json`, say so in the report, and review the entry points and the 5 to 10 biggest files from `biggest-files.txt` yourself, tracing request input to where it lands. `--verify-report` accepts this with a warning.
 
-Record each finding as "Claude only" with file and line, what's wrong, and confidence (high, medium, low). Don't pad.
+Record each finding as "Claude only" (your own) or "independent" (from the specialists, after the refuter and your check), with file and line, what's wrong, and confidence (high, medium, low). Don't pad.
 
 ## Step 5: Score
 
@@ -155,18 +152,18 @@ Each row in `manifest.tsv` names the dimension(s) it feeds in its last column. U
 
 | Dimension | Typical evidence |
 |---|---|
-| Architecture | circular imports, folder layout, whether layers are separated |
+| Architecture | circular imports, folder layout, whether layers are separated, the architecture agent's confirmed findings (full mode) |
 | Modularity | biggest files, long or complex functions, cycles |
 | Spaghettiness | duplication %, biggest files, complexity warnings, dead code |
-| Security | confirmed findings from every security row, plus Claude-only security findings |
+| Security | confirmed findings from every security row, plus Claude-only and independent security findings |
 | Bugs / quality | type and lint errors, analyzer results, dependency health, Lighthouse best practices and accessibility |
-| Scalability | Claude-only findings from Step 4 (full mode) |
+| Scalability | the scalability agent's confirmed findings (full mode); "not assessed" in quick mode |
 | Documentation | docs facts, whether the three checked claims were true |
 
 Rules:
 - **Caps, so scores mean the same thing every run:** any confirmed critical finding caps Security at 40, any confirmed high caps it at 60. If `gitleaks` or `semgrep` didn't run, Security confidence is "low" whatever the number.
 - Every score gets one or two lines of evidence naming the file, tool or number.
-- **Every score gets a "Tools used" entry** built from `manifest.tsv`: each row whose dimension column includes that dimension, with its status in brackets, for example `semgrep (findings), gitleaks (skipped), supabase-rls (findings), npm-audit (clean)`. Skipped or failed tools stay listed so the gap is visible. Add `Claude review` only if Step 4 contributed. Never list a tool that didn't run as a source.
+- **Every score gets a "Tools used" entry** built from `manifest.tsv`: each row whose dimension column includes that dimension, with its status in brackets, for example `semgrep (findings), gitleaks (skipped), supabase-rls (findings), npm-audit (clean)`. Skipped or failed tools stay listed so the gap is visible. Add `Claude review` only if Step 4 contributed, and `Independent review` when the specialists contributed to that dimension (see the scoring rule in `reviews/independent-review.md`). Never list a tool that didn't run as a source.
 - No tool and no review behind a dimension: "not assessed", `null` in `scores.json`. Thin evidence or skipped tools: "low confidence".
 - Never include secret values in any output.
 
@@ -188,7 +185,7 @@ Load `reviews/release-gate.md` first. Write the report in the language the user 
    |---|---|---|---|---|
    | Security | 40 | medium | semgrep (clean), gitleaks (clean), supabase-rls (findings), exposed-keys (findings), Claude review | `bookings` table has no RLS (critical); OpenAI key in `EXPO_PUBLIC_` variable |
 6. **Live site** (if checked): the FAIL and WARN lines from `live-site.txt` and the four Lighthouse scores.
-7. **Findings** with IDs and the fields from the release gate, in four groups: tool-confirmed, Claude only (with confidence), dismissed (with reason), unverified. Add **accepted** (with reason and expiry) when `audit-accepted.tsv` applies.
+7. **Findings** with IDs and the fields from the release gate, in four groups: tool-confirmed, Claude only (with confidence), dismissed (with reason), unverified. Add **accepted** (with reason and expiry) when `audit-accepted.tsv` applies. In full mode follow this with a section headed `## Independent review` (exactly those words; `--verify-report` looks for it): the scope, the three groups (found by both, independent only, tools only), what the refuter dismissed, any `STEERING:` text the agents quoted, and what the method cannot see. If it was not done, the same heading says so and why.
 8. **Proposed fixes** for the top findings (up to 5 in full mode, 3 in quick): file and line, what's wrong, the change as a small diff, why it fixes it, confidence, and how to check it worked. Steps instead of a diff if it's too big. Proposals only; nothing applied yet.
 9. **Refactor plan:** the 3 changes with the best payoff for the least effort, files involved, rough size.
 10. **Maintenance plan:** as described at the end of `reviews/release-gate.md`.
@@ -198,10 +195,10 @@ Load `reviews/release-gate.md` first. Write the report in the language the user 
 Also write `audit/<same folder>/scores.json`:
 
 ```json
-{"date": "YYYY-MM-DD", "mode": "quick", "rubric": 2, "level": 2, "verdict": "launch-with-limits", "confirmed": {"critical": 0, "high": 0}, "checklist": {"pass": 0, "fail": 0, "partial": 0, "not_verified": 0, "not_applicable": 0}, "traits": ["expo", "supabase", "ai"], "stakes": [], "live_url": null, "scores": {"architecture": 0, "modularity": 0, "spaghettiness": 0, "security": 0, "quality": 0, "scalability": null, "documentation": 0}, "confidence": {"security": "low"}, "sources": {"security": {"semgrep": "findings", "gitleaks": "skipped", "claude-review": false}, "scalability": {}}}
+{"date": "YYYY-MM-DD", "mode": "quick", "rubric": 2, "level": 2, "verdict": "launch-with-limits", "confirmed": {"critical": 0, "high": 0}, "checklist": {"pass": 0, "fail": 0, "partial": 0, "not_verified": 0, "not_applicable": 0}, "traits": ["expo", "supabase", "ai"], "stakes": [], "live_url": null, "scores": {"architecture": 0, "modularity": 0, "spaghettiness": 0, "security": 0, "quality": 0, "scalability": null, "documentation": 0}, "confidence": {"security": "low"}, "independent_review": {"status": "done", "agents": ["security", "architecture", "scalability"], "refuted": 0, "found_by_both": 0, "independent_only": 0, "tools_only": 0}, "sources": {"security": {"semgrep": "findings", "gitleaks": "skipped", "claude-review": false}, "scalability": {}}}
 ```
 
-`rubric` is the version of these scoring rules (2 = with caps); compare scores across audits only when it matches. `verdict` is `dont-launch`, `launch-with-limits` or `no-blocking-problems`; `level` is 1, 2 or 3 from the release gate; `confirmed` counts the findings you confirmed as critical and high in Step 3; `checklist` counts the marks. **Do not judge the verdict yourself.** Write the checklist table in `AUDIT.md` and `scores.json` (with `confirmed`, `level` and `mode`) first, run `bash <skill-dir>/scripts/scan.sh --verdict`, and use the `VERDICT=` and `TEXT=` lines it prints in both files and in the plain-words section. The `REASON=` lines tell you what to put under "Fix these first". `--verify-report` checks that you did. `sources` mirrors the "Tools used" column.
+`rubric` is the version of these scoring rules (2 = with caps); compare scores across audits only when it matches. `verdict` is `dont-launch`, `launch-with-limits` or `no-blocking-problems`; `level` is 1, 2 or 3 from the release gate; `confirmed` counts the findings you confirmed as critical and high in Step 3; `checklist` counts the marks. **Do not judge the verdict yourself.** Write the checklist table in `AUDIT.md` and `scores.json` (with `confirmed`, `level` and `mode`) first, run `bash <skill-dir>/scripts/scan.sh --verdict`, and use the `VERDICT=` and `TEXT=` lines it prints in both files and in the plain-words section. The `REASON=` lines tell you what to put under "Fix these first". `--verify-report` checks that you did. `sources` mirrors the "Tools used" column. `independent_review` is written in full mode only (leave it out in quick mode).
 
 Also write `audit/<same folder>/fixes.json`, the proposed fixes in a form the web page can show with a tick box each (the report's "Proposed fixes" section stays too):
 
@@ -215,7 +212,7 @@ Also write `audit/<same folder>/fixes.json`, the proposed fixes in a form the we
 
 `id` is `P-1`, `P-2`... `finding` is the stable ID from `findings.tsv` (or `C-001` for a Claude-only finding). `who` is `claude` when Claude can make the change in the project, or `you` when only the owner can (rotate a key, change a dashboard setting, answer a question). Give every `claude` fix a `change` (a small diff or exact steps) and a `verify`. Never put secret values in any field.
 
-When the files are written, run `bash <skill-dir>/scripts/scan.sh --verify-report`. It checks that `scores.json` is complete, that the verdict is allowed for the level and mode, that the verdict text and checklist marks in `AUDIT.md` match `scores.json`, that every tool listed with a status matches `manifest.tsv`, and that no secret-looking text is in the report. Fix every `FAIL` and run it again before showing the report. Then run `bash <skill-dir>/scripts/scan.sh --report-html` to rebuild the web page (`report.html` in the run folder: verdict, filterable findings, coverage, scores, checklist and the written report in one file, no internet needed) and give the user its path. Then run `bash <skill-dir>/scripts/scan.sh --open` so the page opens in their browser by itself (skip this in a scheduled or unattended run). If either can't run, say so in the report.
+When the files are written, run `bash <skill-dir>/scripts/scan.sh --verify-report`. It checks that `scores.json` is complete, that the verdict is allowed for the level and mode, that the verdict text and checklist marks in `AUDIT.md` match `scores.json`, that every tool listed with a status matches `manifest.tsv`, that a full review records its independent review (all three agents, the counts, the report section) or says why not, and that no secret-looking text is in the report. Fix every `FAIL` and run it again before showing the report. Then run `bash <skill-dir>/scripts/scan.sh --report-html` to rebuild the web page (`report.html` in the run folder: verdict, filterable findings, coverage, scores, checklist and the written report in one file, no internet needed) and give the user its path. Then run `bash <skill-dir>/scripts/scan.sh --open` so the page opens in their browser by itself (skip this in a scheduled or unattended run). If `AUDIT_OPEN=1` already opened the progress page at the start, that window has switched to the report and `--open` says so and opens nothing: the user sees one window, not two. If either can't run, say so in the report.
 
 ## Step 7: Act, with permission
 
