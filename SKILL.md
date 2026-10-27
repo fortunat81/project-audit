@@ -14,7 +14,7 @@ Order of work: detect, tools, then judgment. The script works out what the proje
 ## How it adapts
 
 - `scripts/scan.sh` detects **traits** (for example `expo supabase ai mobile`, `next web server-code payments`, `flutter`, `static-site`, `python server-code`) and the main languages.
-- `scripts/checks/*.sh` are **modules**. Each decides whether it applies to those traits and runs its tools. Modules that don't apply are listed in `meta.txt` as not applicable.
+- `scripts/audit_checks/*.py` are **modules**. Each decides whether it applies to those traits and runs its tools. Modules that don't apply are listed in `meta.txt` as not applicable.
 - `reviews/*.md` are **review checklists**, one per trait. Step 4 loads the ones that match. `reviews/release-gate.md` is always used in Step 6: the launch checklist, the go/no-go verdict and the maintenance plan.
 - Languages with no dedicated module are listed as `UNHANDLED`. Only the generic checks (secrets, Semgrep, dependencies, duplication, sizes) cover them, and the report must say so.
 - Optional `.audit.conf` in the project root (plain `key=value` lines, never executed): `url=` for the live site, `skip=` tools to leave out, `ignore=` extra paths to leave out of duplication checks. Create or change it only when the user asks.
@@ -221,8 +221,8 @@ Show the plain-words section first (verdict, fix-these-first, what you need to c
 ## Extending
 
 When the user asks for a new check, or an audit shows a stack with no dedicated checks:
-- **New tool or script check:** add `scripts/checks/NN-name.sh` defining `mod_applies` (use `has_trait <trait>`), optionally `mod_tools` (tools for `--check`; add an `install_hint` case in `scan.sh` for new tools), and `mod_run` (set `DIM=`, then `run`, `skip`, `record` or `result`). The header comment of `run()` in `scan.sh` lists its options. Pin npx tools to a version at the top of `scan.sh`.
-- **New trait:** add a detection line in `detect()` in `scan.sh`.
+- **New tool or script check:** add `scripts/audit_checks/mNN_name.py` with `NAME`, `applies(ctx)`, optionally `tools(ctx)` (tools for `--check`; add an install hint in `install_hint()` in `audit_core.py` for new tools) and `run(ctx)` (set `ctx.dim`, then `ctx.run`, `ctx.skip`, `ctx.record` or `ctx.result`), and list it in `MODULE_FILES` in `audit_checks/__init__.py`. The docstring of `Ctx.run()` in `audit_core.py` lists its options. Pin npx tools to a version at the top of `audit_core.py`.
+- **New trait:** add a detection line in `audit_detect.py`.
 - **New review checklist:** add `reviews/<trait>.md` with an "Always (quick and full)" section and a "Full mode" section, and add the trait to the list in Step 4.
 Test any new module on a throwaway project with a planted problem before relying on it.
 

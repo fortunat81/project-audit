@@ -2,7 +2,7 @@
 # and the translation code. Each unit_* function prints PASS/FAIL/UNTESTED lines like a scenario.
 # Sourced by run-tests.sh (uses ok/bad/skip, make_report, WORK, HERE from lib.sh).
 
-UNITS="report-check verdict-check html-check serve-check translate-check"
+UNITS="report-check verdict-check html-check serve-check translate-check engine-check"
 
 # Runs a Python test file that prints "OK: label" / "BAD: label | detail" and turns each line into PASS/FAIL
 run_python_lines() {   # run_python_lines <prefix> <file>
@@ -131,4 +131,34 @@ unit_translate_check() {
   echo "=== translate-check (scripts/audit_i18n.py, audit_translate.py)"
   need_python "translations" || return 0
   run_python_lines "translate" translate_test.py
+}
+
+# --- The small commands of scan.sh (--detect, --projects, --check, --status, --version, --add-gitignore, ...)
+unit_engine_check() {
+  echo "=== engine-check (scripts/audit_scan.py modes)"
+  local P="$WORK/engine-check" out cr
+  rm -rf "$P"; mkdir -p "$P/backend" "$P/web"
+  printf '{ "name": "web", "version": "1.0.0", "dependencies": { "react": "18.2.0" } }\n' > "$P/web/package.json"
+  printf 'flask==3.0.0\n' > "$P/backend/requirements.txt"
+  printf '{ "name": "root", "version": "1.0.0", "dependencies": { "express": "4.21.2" } }\n' > "$P/package.json"
+  ( cd "$P" && git init -q && git config user.email t@example.com && git config user.name t && git add -A && git commit -qm init )
+  cr="$(printf '\r')"
+  out="$(cd "$P" && bash "$SCAN" --detect 2>&1)"
+  case "$out" in *"$cr"*) bad "output has plain line endings" "a carriage return (\\r) was found in --detect output" ;; *) ok "output has plain line endings" ;; esac
+  case "$out" in *"TRAITS="*"node"*"server-code"*) ok "--detect lists the traits" ;; *) bad "--detect lists the traits" "$out" ;; esac
+  case "$out" in *"MODULE=10-secrets applies"*"MODULE=80-live-site not-applicable"*) ok "--detect lists which modules apply" ;; *) bad "--detect lists which modules apply" "$out" ;; esac
+  out="$(cd "$P" && bash "$SCAN" --projects 2>&1)"
+  case "$out" in *"PROJECT=."*"PROJECT=backend"*"PROJECT=web"*) ok "--projects lists the folders" ;; *) bad "--projects lists the folders" "$out" ;; esac
+  out="$(cd "$P" && bash "$SCAN" --check 2>&1)"
+  case "$out" in "PROFILE="*) ok "--check starts with the profile" ;; *) bad "--check starts with the profile" "$out" ;; esac
+  out="$(cd "$P" && bash "$SCAN" --status 2>&1)"
+  case "$out" in *"RECOMMEND=full"*"no previous audit"*) ok "--status without an earlier audit recommends a full one" ;; *) bad "--status without an earlier audit recommends a full one" "$out" ;; esac
+  out="$(cd "$P" && AUDIT_NO_FETCH=1 bash "$SCAN" --version 2>&1)"
+  case "$out" in *"IS_GIT=yes"*"UPSTREAM=none"*"CAN_FAST_FORWARD=no"*) ok "--version reports a repo without GitHub" ;; *) bad "--version reports a repo without GitHub" "$out" ;; esac
+  out="$(cd "$P" && bash "$SCAN" --add-gitignore 2>&1; bash "$SCAN" --add-gitignore 2>&1)"
+  case "$out" in *"ADDED"*"ALREADY"*) ok "--add-gitignore adds the line once" ;; *) bad "--add-gitignore adds the line once" "$out" ;; esac
+  out="$(cd "$P" && bash "$SCAN" --untrusted --install-deps 2>&1)"
+  case "$out" in *"REFUSED"*) ok "untrusted mode refuses to install packages" ;; *) bad "untrusted mode refuses to install packages" "$out" ;; esac
+  out="$(cd "$P" && bash "$SCAN" --no-such-mode 2>&1)"; code=$?
+  if [ $code -eq 2 ] && case "$out" in *"Unknown option"*) true ;; *) false ;; esac; then ok "an unknown option is refused"; else bad "an unknown option is refused" "exit $code: $out"; fi
 }

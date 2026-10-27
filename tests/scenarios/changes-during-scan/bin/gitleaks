@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 # Stand-in for a tool that is still running when the project is edited: adds a new file, then runs the real tool.
+[ -n "${AUDIT_SHIM_ACTIVE:-}" ] && exit 127   # never call ourselves again
+export AUDIT_SHIM_ACTIVE=1
 echo "edited while the scan ran" >> "$PWD/edited-during-scan.txt"
-PATH="${PATH#"$SHIM_DIR":}"
+# Drop this shim's own folder from PATH (compared as real paths, whatever style PATH is written in)
+self="$(cd "$(dirname "$0")" && pwd)"
+rest=""
+IFS=:
+for d in $PATH; do
+  [ -n "$d" ] && [ "$(cd "$d" 2>/dev/null && pwd)" = "$self" ] && continue
+  rest="$rest:$d"
+done
+unset IFS
+PATH="${rest#:}"
 exec gitleaks "$@"

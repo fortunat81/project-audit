@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 # Stand-in that reports whether secret-looking environment variables reached the scanners.
+[ -n "${AUDIT_SHIM_ACTIVE:-}" ] && exit 127   # never call ourselves again
+export AUDIT_SHIM_ACTIVE=1
 [ -n "${FAKE_SECRET_TOKEN_FOR_TESTS:-}" ] && echo leaked > "$PWD/LEAKED-ENV.txt"
-PATH="${PATH#"$SHIM_DIR":}"
+# Drop this shim's own folder from PATH (compared as real paths, whatever style PATH is written in)
+self="$(cd "$(dirname "$0")" && pwd)"
+rest=""
+IFS=:
+for d in $PATH; do
+  [ -n "$d" ] && [ "$(cd "$d" 2>/dev/null && pwd)" = "$self" ] && continue
+  rest="$rest:$d"
+done
+unset IFS
+PATH="${rest#:}"
 command -v semgrep >/dev/null 2>&1 || exit 0
 exec semgrep "$@"

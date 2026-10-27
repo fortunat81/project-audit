@@ -15,20 +15,17 @@ is broken; these are things that make the project harder to change or less prove
 
 ## Design debt
 
-4. **Bash and Python mixed.** `scan.sh` (about 900 lines) and the check modules are bash; everything new is
-   Python. Next step if it keeps growing: port trait detection and `run()`/manifest, then the modules one at
-   a time, with the test suite as the safety net.
-5. **Scanner and rule versions drift.** Python scanners are installed unpinned and Semgrep downloads its
+4. **Scanner and rule versions drift.** Python scanners are installed unpinned and Semgrep downloads its
    rules at scan time. Idea: a pinned tools environment (`scan.sh --setup`, `uv`) and saved rules.
-6. **Long functions in our own code.** The audit tool's own scan flags a few (for example `render_markdown`,
+5. **Long functions in our own code.** The audit tool's own scan flags a few (for example `render_markdown`,
    `compute_verdict`, `check_report`, `write_outputs`). Split when touching them.
-7. **French and English tables are written by hand.** `tests/translate_test.py` checks both exist and match
+6. **French and English tables are written by hand.** `tests/translate_test.py` checks both exist and match
    the numbering; it can't judge the translation quality.
 
 ## Process
 
-8. **No review of the local server by someone else.** It starts something that edits files. It has a token,
+7. **No review of the local server by someone else.** It starts something that edits files. It has a token,
    host/origin checks, a fixed prompt and blocked commands, but deserves one independent read.
-9. **Real-world coverage is small.** Four of the owner's projects and three public repos so far. Each new
+8. **Real-world coverage is small.** Four of the owner's projects and three public repos so far. Each new
    project has found one or two gaps; expect that to continue.
-10. **Self-audit noise.** Auditing this repo reports the planted problems in `tests/scenarios/` (expected).
+9. **Self-audit noise.** Auditing this repo reports the planted problems in `tests/scenarios/` (expected).
