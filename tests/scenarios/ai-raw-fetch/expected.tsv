@@ -1,0 +1,2 @@
+# AI used through fetch() instead of an SDK must still load the AI checklist.
+@traits	node server-code ai

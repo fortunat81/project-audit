@@ -192,6 +192,12 @@ detect() {
   [ -d supabase ] && add_trait supabase
   if [ -f firebase.json ] || [ -f firestore.rules ] || [ -f database.rules.json ] || [ -f storage.rules ]; then add_trait firebase; fi
 
+  # AI used through a plain HTTP call: no SDK in the dependencies, but the code talks to an AI provider
+  if ! has_trait ai; then
+    local ai_hosts='api\.openai\.com|api\.anthropic\.com|openrouter\.ai|generativelanguage\.googleapis\.com|api\.groq\.com|api\.mistral\.ai|api\.cohere\.(ai|com)|api\.together\.(xyz|ai)|api\.replicate\.com|api\.deepseek\.com|api\.x\.ai|api\.perplexity\.ai'
+    if [ -n "$(project_files | grep -Ev "$NOISE_RE" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|py|dart|php)$' | tr '\n' '\0' | xargs -0 grep -lE "$ai_hosts" 2>/dev/null | head -1)" ]; then add_trait ai; fi
+  fi
+
   # Native mobile code that is really yours (Expo and Flutter generate android/ and ios/)
   if ! has_trait expo && ! has_trait flutter; then
     if [ -d android ] && any_file 'android/build.gradle*' 'android/app/build.gradle*'; then add_trait native-android; fi
