@@ -21,3 +21,6 @@ zizmor	absent	-	-
 live-site	absent	-	-
 gitleaks	findings	env-style-secret	"File":"[^"]*\.env\.example
 gitleaks-uncommitted	findings	env-style-secret	-
+@digest	F-[0-9a-f]{6}.*gitleaks.*(aws-access-token|env-style-secret)
+@digest	NOT FULLY COVERED
+@not-digest	sk_live_|ghp_|AKIA[A-Z2-7]{16}

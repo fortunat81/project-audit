@@ -61,7 +61,7 @@ astro_extract() {
 }
 
 astro_security() {
-  local files f dest n=0 rel
+  local files f dest n=0
   files="$(project_files | grep '\.astro$')"
   [ -z "$files" ] && return 0
 
@@ -74,10 +74,12 @@ astro_security() {
 
   # 2. Semgrep on the extracted code
   if ! has semgrep; then skip semgrep-astro "not installed ($(install_hint semgrep))"; return 0; fi
-  rm -rf "$OUT/astro-extract"
+  # The copies go in a temporary folder, not in audit/: tsc and ESLint would otherwise pick them up on the next run
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t astroextract)"
+  local ex="$tmp/astro-extract"; mkdir -p "$ex"
   while IFS= read -r f; do
     [ -f "$f" ] || continue
-    dest="$OUT/astro-extract/$f"; mkdir -p "$(dirname "$dest")"
+    dest="$ex/$f"; mkdir -p "$(dirname "$dest")"
     astro_extract top "$f" > "$dest.ts"
     astro_extract script "$f" > "$dest.script.ts"
     grep -q '[^[:space:]]' "$dest.ts" 2>/dev/null || rm -f "$dest.ts"
@@ -86,10 +88,9 @@ astro_security() {
   done <<EOT
 $files
 EOT
-  [ -n "$(find "$OUT/astro-extract" -name '*.ts' 2>/dev/null | head -1)" ] || return 0
-  rel="${OUT#$ROOT/}/astro-extract"
+  [ -n "$(find "$ex" -name '*.ts' 2>/dev/null | head -1)" ] || { rm -rf "$tmp"; return 0; }
   run --json --empty '"results": *\[ *\]' semgrep-astro semgrep-astro.json \
-    semgrep scan --config p/default --json --quiet --metrics=off --no-git-ignore "$rel"
+    semgrep scan --config p/default --json --quiet --metrics=off --no-git-ignore "$ex"
   # Findings in the original file names, for the report
   if json_looking "$OUT/semgrep-astro.json"; then
     json_eval "$OUT/semgrep-astro.json" \
@@ -103,4 +104,5 @@ EOT
       > "$OUT/astro-findings.txt"
   fi
   echo "astro_files_extracted=$n" >> "$OUT/meta.txt"
+  rm -rf "$tmp"
 }

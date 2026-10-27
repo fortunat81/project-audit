@@ -710,6 +710,10 @@ if is_git; then echo "commit_end=$(git rev-parse --verify -q HEAD || echo none)"
 
 echo "$OUT" > "$ROOT/audit/latest.txt"
 
+# A compact digest of the findings (findings.tsv, digest.txt) so the report can be written without reading raw output
+if has node; then node "$SCRIPT_DIR/digest.js" "$OUT" >/dev/null 2>&1 || echo "NOTE: digest.txt could not be built; read manifest.tsv and the tool outputs"
+else echo "NOTE: digest.txt skipped (needs node); read manifest.tsv and the tool outputs"; fi
+
 # Coverage summary: how much of the audit actually ran
 awk -F'\t' 'NR>1 {
   if ($2=="clean") c++; else if ($2=="findings") f++; else if ($2=="done") d++;

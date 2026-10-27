@@ -101,6 +101,10 @@ for name in $SCENARIOS; do
         for t in $want; do if [ -e "$dest/$t" ]; then bad "file absent: $t" "the scan ran code from the project"; else ok "file absent: $t"; fi; done; continue ;;
       @meta)       # a line the run's meta.txt must contain
         if grep -Eq "$want" "$OUT/meta.txt"; then ok "meta: $want"; else bad "meta: $want" "not in meta.txt"; fi; continue ;;
+      @digest)     # a line digest.txt must contain
+        if grep -Eq "$want" "$OUT/digest.txt" 2>/dev/null; then ok "digest has: $want"; else bad "digest has: $want" "not in digest.txt"; fi; continue ;;
+      @not-digest) # text digest.txt and findings.tsv must NOT contain (secret values, for example)
+        if grep -Eq "$want" "$OUT/digest.txt" "$OUT/findings.tsv" 2>/dev/null; then bad "digest has no: $want" "found in digest.txt or findings.tsv"; else ok "digest has no: $want"; fi; continue ;;
       @coverage)
         if grep -Eq "$want" "$OUT/coverage.txt"; then ok "coverage note: $want"; else bad "coverage note: $want" "$(tr '\n' ' ' < "$OUT/coverage.txt")"; fi
         continue ;;
