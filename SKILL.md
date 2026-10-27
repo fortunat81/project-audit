@@ -15,7 +15,7 @@ Order of work: detect, tools, then judgment. The script works out what the proje
 
 - `scripts/scan.sh` detects **traits** (for example `expo supabase ai mobile`, `next web server-code payments`, `flutter`, `static-site`, `python server-code`) and the main languages.
 - `scripts/checks/*.sh` are **modules**. Each decides whether it applies to those traits and runs its tools. Modules that don't apply are listed in `meta.txt` as not applicable.
-- `reviews/*.md` are **review checklists**, one per trait. Step 4 loads the ones that match.
+- `reviews/*.md` are **review checklists**, one per trait. Step 4 loads the ones that match. `reviews/release-gate.md` is always used in Step 6: the launch checklist, the go/no-go verdict and the maintenance plan.
 - Languages with no dedicated module are listed as `UNHANDLED`. Only the generic checks (secrets, Semgrep, dependencies, duplication, sizes) cover them, and the report must say so.
 - Optional `.audit.conf` in the project root (plain `key=value` lines, never executed): `url=` for the live site, `skip=` tools to leave out, `ignore=` extra paths to leave out of duplication checks. Create or change it only when the user asks.
 
@@ -54,6 +54,14 @@ Show one line, for example: "Branch main, 2 commits behind GitHub, 3 uncommitted
 - `BEHIND` > 0 and `CAN_FAST_FORWARD=no`: don't offer the update; say why in one line.
 - `BEHIND=0`, `FETCH=failed` or `UPSTREAM=none`: no version question.
 - Auditing a branch that isn't checked out isn't supported; the user switches first.
+
+### Where the projects are
+
+```bash
+bash <skill-dir>/scripts/scan.sh --projects
+```
+
+It lists `PROJECT=<folder>` for this folder (if it holds project files) and for subfolders that do (`backend/`, `app/`, `web/`). More than one means the checks that need a project folder (dependency audit, tsc, eslint, pip-audit) only cover the folder they run in. Tell the user in one line, then run Steps 2 to 6 inside each folder (`cd` there; each gets its own `audit/` results), and write one `AUDIT.md` per folder plus a short combined verdict in the folder you started from. A scan that finds more folders than it covers records a `subprojects` row as `partial`; never ignore it.
 
 ### What the project is
 
@@ -97,6 +105,8 @@ Wait for it to finish. It prints the profile, a status table, a `COVERAGE:` line
 
 If it prints `WARNING: audit/ is not git-ignored`, ask once whether to add it; only on yes run `bash <skill-dir>/scripts/scan.sh --add-gitignore`. If the `time-limit` row says `unavailable`, tell the user the scanners ran without a time limit (macOS: `brew install coreutils`).
 
+If `tsc`, `eslint` or `knip` show `skipped: dependencies not installed`, ask once: "Install this project's packages so type, lint and unused-code checks can run? It downloads them into `node_modules/` without running their install scripts and doesn't change your lockfile." Only on yes run `bash <skill-dir>/scripts/scan.sh --install-deps`, then run the scan again. Without it, say in the report that the bugs and quality score is thin.
+
 Don't form opinions yet. A skipped tool is never "no problems."
 
 ## Step 3: Verify the tool findings
@@ -110,13 +120,15 @@ Read `manifest.tsv` first. Statuses:
 
 Read each output file; for large ones read the summary and worst items. Then check the findings instead of trusting them: for every high or critical finding plus about 15 medium ones, open the file and line and mark it **confirmed**, **dismissed** (one-line reason: test file, example key, generated code, unreachable, intended public key) or **unverified** (say why). Group duplicates.
 
-Script-made checks need the same care: `supabase-rls.txt`, `firebase-rules.txt`, `exposed-keys.txt`, `env-files.txt`, `live-site.txt` are pattern matches. Confirm each by opening the file; the matching checklist in `reviews/` says how to judge them.
+Script-made checks need the same care: `supabase-rls.txt`, `firebase-rules.txt`, `exposed-keys.txt`, `env-files.txt`, `live-site.txt` and `release-checks.txt` are pattern matches (`release-checks.txt` lines are `FAIL` or `WARN` plus a code, a reason and `file:line`; a CORS or cookie hit can be intended, so open the line). Confirm each by opening the file; the matching checklist in `reviews/` says how to judge them.
+
+Accepted risks: if `audit-accepted.tsv` exists in the project root, a finding that matches a line whose `expires` date hasn't passed is reported as "accepted" (with its reason and expiry), not as open. Format and limits are in `reviews/release-gate.md`. Never add lines yourself.
 
 Secrets: `gitleaks` scans history, `gitleaks-uncommitted` scans staged, unstaged, new and `.env` files. Report by location only and **never print a secret value**. A secret in history means rotate it (deleting it leaves it in history); ask whether it was already rotated before calling it critical. A secret only in an uncommitted or ignored file means keep it out of git, and rotate it if the file was shared.
 
 ## Step 4: Stack review
 
-Load the checklist in `reviews/` for each detected trait that has one: `ai`, `server-code`, `web` (also when a live URL was checked), `supabase`, `firebase`, `mobile`, `payments`, plus `personal-data` when the user said so or you find forms or tables collecting personal data.
+Load the checklist in `reviews/` for each detected trait that has one: `ai`, `server-code`, `web` (also when a live URL was checked), `supabase`, `firebase`, `mobile`, `payments`, `wordpress`, plus `personal-data` when the user said so or you find forms or tables collecting personal data.
 
 - **Quick mode:** do only the "Always" section of each loaded checklist. Skip the rest of this step. Mark architecture and documentation "low confidence, not independently reviewed" and scalability "not assessed".
 - **Full mode:** do every section of each loaded checklist, then review a fixed scope and say in the report what you did and didn't read:
@@ -154,32 +166,40 @@ Rules:
 
 ## Step 6: Write the report and the history
 
-Write `audit/<same folder>/AUDIT.md`:
-1. **Verdict:** one paragraph, the mode and why, and the version audited (branch, commit, behind GitHub, uncommitted and untracked files included, updated first or not).
-2. **Profile:** what was detected, modules that ran, checklists used, and anything with no dedicated checks.
-3. **Scores:** columns Dimension, Score, Confidence, Tools used, Evidence. For example:
+Load `reviews/release-gate.md` first. Write `audit/<same folder>/AUDIT.md` so that a non-programmer can stop reading after the first section:
+
+1. **In plain words** (at most 12 lines, no jargon; explain any unavoidable term in a few words):
+   - The **verdict** from the release gate (🔴 Don't launch yet / 🟡 Launch with limits / 🟢 No blocking problems found), the level used, and the mode (quick or full) with the one-line reason.
+   - **Fix these first:** at most three items, each as "what is wrong, why it matters, what to do", in everyday words.
+   - **What you need to do or confirm:** the `[Y]` checklist items still ❓, as short questions.
+   - **What was not checked,** in one or two lines (skipped tools, quick mode, dashboard-only settings, other project folders).
+2. **Launch checklist:** every item of `reviews/release-gate.md` that applies at this level, as a table: number, the item in plain words, mark (✅ ❌ ⚠️ ❓ ➖), who checks it (T / C / Y), and the evidence (tool row, file and line, or the owner's answer). Count the marks under the table.
+3. **Verdict:** one paragraph, the mode and why, the version audited (branch, commit, behind GitHub, uncommitted and untracked files included, updated first or not), and the rule that decided the verdict.
+4. **Profile:** what was detected, modules that ran, checklists used, project folders found, and anything with no dedicated checks.
+5. **Scores:** columns Dimension, Score, Confidence, Tools used, Evidence. For example:
 
    | Dimension | Score | Confidence | Tools used | Evidence |
    |---|---|---|---|---|
    | Security | 40 | medium | semgrep (clean), gitleaks (clean), supabase-rls (findings), exposed-keys (findings), Claude review | `bookings` table has no RLS (critical); OpenAI key in `EXPO_PUBLIC_` variable |
-4. **Live site** (if checked): the FAIL and WARN lines from `live-site.txt` and the four Lighthouse scores.
-5. **Findings** in four groups: tool-confirmed, Claude only (with confidence), dismissed (with reason), unverified.
-6. **Proposed fixes** for the top findings (up to 5 in full mode, 3 in quick): file and line, what's wrong, the change as a small diff, why it fixes it, confidence, and how to check it worked. Steps instead of a diff if it's too big. Proposals only; nothing applied yet.
-7. **Refactor plan:** the 3 changes with the best payoff for the least effort, files involved, rough size.
-8. **Coverage:** what was and wasn't read; the `INCOMPLETE` list; tools skipped by choice; unhandled languages.
-9. **Change since last run:** compare with the previous `scores.json`, if any.
+6. **Live site** (if checked): the FAIL and WARN lines from `live-site.txt` and the four Lighthouse scores.
+7. **Findings** with IDs and the fields from the release gate, in four groups: tool-confirmed, Claude only (with confidence), dismissed (with reason), unverified. Add **accepted** (with reason and expiry) when `audit-accepted.tsv` applies.
+8. **Proposed fixes** for the top findings (up to 5 in full mode, 3 in quick): file and line, what's wrong, the change as a small diff, why it fixes it, confidence, and how to check it worked. Steps instead of a diff if it's too big. Proposals only; nothing applied yet.
+9. **Refactor plan:** the 3 changes with the best payoff for the least effort, files involved, rough size.
+10. **Maintenance plan:** as described at the end of `reviews/release-gate.md`.
+11. **Coverage:** what was and wasn't read; the `INCOMPLETE` list; tools skipped by choice; unhandled languages.
+12. **Change since last run:** compare with the previous `scores.json`, if any.
 
 Also write `audit/<same folder>/scores.json`:
 
 ```json
-{"date": "YYYY-MM-DD", "mode": "quick", "rubric": 2, "traits": ["expo", "supabase", "ai"], "stakes": [], "live_url": null, "scores": {"architecture": 0, "modularity": 0, "spaghettiness": 0, "security": 0, "quality": 0, "scalability": null, "documentation": 0}, "confidence": {"security": "low"}, "sources": {"security": {"semgrep": "findings", "gitleaks": "skipped", "claude-review": false}, "scalability": {}}}
+{"date": "YYYY-MM-DD", "mode": "quick", "rubric": 2, "level": 2, "verdict": "launch-with-limits", "checklist": {"pass": 0, "fail": 0, "partial": 0, "not_verified": 0, "not_applicable": 0}, "traits": ["expo", "supabase", "ai"], "stakes": [], "live_url": null, "scores": {"architecture": 0, "modularity": 0, "spaghettiness": 0, "security": 0, "quality": 0, "scalability": null, "documentation": 0}, "confidence": {"security": "low"}, "sources": {"security": {"semgrep": "findings", "gitleaks": "skipped", "claude-review": false}, "scalability": {}}}
 ```
 
-`rubric` is the version of these scoring rules (2 = with caps); compare scores across audits only when it matches. `sources` mirrors the "Tools used" column.
+`rubric` is the version of these scoring rules (2 = with caps); compare scores across audits only when it matches. `verdict` is `dont-launch`, `launch-with-limits` or `no-blocking-problems`; `level` is 1, 2 or 3 from the release gate; `checklist` counts the marks. `sources` mirrors the "Tools used" column.
 
 ## Step 7: Act, with permission
 
-Show the verdict, the score table exactly as in the report (all five columns, never just dimension and number), the live-site summary if any, the proposed fixes and the refactor plan. Change nothing until the user picks an item. Then:
+Show the plain-words section first (verdict, fix-these-first, what you need to confirm), then the launch checklist counts, the score table exactly as in the report (all five columns, never just dimension and number), the live-site summary if any, the proposed fixes and the refactor plan. Change nothing until the user picks an item. Then:
 - One item at a time, on a git branch if it's a git repo.
 - Run the project's tests if it has any, then re-run Step 2 and report the score change.
 - If a fix turns out wrong, say so and revert it instead of patching around it.
@@ -202,3 +222,5 @@ Test any new module on a throwaway project with a planted problem before relying
 - Live-site checks look at the home page and a few known paths, not every page.
 - Dependency findings are only as current as the lockfile.
 - Not a substitute for a professional security review before handling payments or health data.
+- The launch checklist covers the common mistakes behind most breaches of small sites and apps. A green verdict means "no blocking problems found in what was checked", never "secure". `[Y]` items are the owner's word until they are tried.
+- End-of-support dates in `65-release-readiness.sh` are a dated table; a runtime missing from it isn't judged.

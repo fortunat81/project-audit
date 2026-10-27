@@ -30,8 +30,9 @@ Then, in Claude Code inside any project, ask: "audit this project". If a project
 |---|---|
 | `SKILL.md` | The instructions Claude follows: tools first, then verification, review, scores, report |
 | `scripts/scan.sh` | Detects the project's traits and runs the check modules |
-| `scripts/checks/` | One module per kind of check (secrets, code security, dependencies, structure, types/lint, health, backend rules, exposed keys, CI, native mobile, live site) |
-| `reviews/` | Review checklists Claude loads per trait (AI, server code, web, Supabase, Firebase, mobile, payments, personal data) |
+| `scripts/checks/` | One module per kind of check (secrets, code security, dependencies, structure, types/lint, health, backend rules, exposed keys, CI, release readiness, native mobile, live site) |
+| `reviews/` | Review checklists Claude loads per trait (AI, server code, web, Supabase, Firebase, mobile, payments, WordPress, personal data), plus `release-gate.md`: the launch checklist, the go/no-go verdict (don't launch / launch with limits / no blocking problems found) and the maintenance plan |
+| `audit-accepted.tsv` | Optional, in the audited project: risks the owner knowingly accepted, each with a reason and an expiry date |
 | `tests/` | Test scenarios with planted problems, and the runner that checks the auditor catches them |
 
 ## Test the auditor
