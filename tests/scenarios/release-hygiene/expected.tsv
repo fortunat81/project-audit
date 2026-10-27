@@ -1,0 +1,13 @@
+# Things that must not reach production are found from the files alone.
+@traits	python docker
+release-checks	findings	DEBUG-ON	-
+release-checks	findings	TEST-ACCOUNT	-
+release-checks	findings	CORS-OPEN	-
+release-checks	findings	COOKIE-FLAGS	-
+release-checks	findings	DOCKER-ROOT	-
+release-checks	findings	RUNTIME-EOL: python 3\.9	-
+release-checks	findings	RUNTIME-EOL: node 18	-
+release-checks	findings	NO-TESTS	-
+release-checks	findings	NO-CI	-
+release-checks	findings	CORS-OPEN	safe\.js
+release-checks	findings	COOKIE-FLAGS	safe\.js
