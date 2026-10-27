@@ -3,3 +3,4 @@
 semgrep-astro	findings	"path":"[^"]*index\.astro\.ts"	"path":"[^"]*safe\.astro
 semgrep-astro	findings	"path":"[^"]*index\.astro\.script\.ts"	"path":"[^"]*safe\.astro
 astro-set-html	findings	index\.astro	safe\.astro
+tsc	skipped.*Astro.*generated types	-	-

@@ -20,6 +20,10 @@ mod_run() {
   # TypeScript: use the project's own compiler so versions and settings match
   if has_trait typescript; then
     if has_trait node && [ ! -d node_modules ]; then skip tsc "dependencies not installed (offer: scan.sh --install-deps)"
+    elif has_trait astro && [ ! -f .astro/types.d.ts ]; then
+      # Astro writes its type files to .astro/ (npx astro sync, also done by dev and build). Without them
+      # tsc reports errors that are not real (for example "Property 'env' does not exist on ImportMeta").
+      skip tsc "Astro's generated types are missing, so tsc would report false errors (run: npx astro sync, then scan again)"
     elif [ -f node_modules/.bin/tsc ]; then
       note_version tsc "$(node_modules/.bin/tsc --version 2>/dev/null)"
       run --codes "1 2" --match 'error TS' tsc tsc.txt node_modules/.bin/tsc --noEmit
