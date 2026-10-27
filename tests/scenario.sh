@@ -33,7 +33,8 @@ run_scenario() {
     [ -f "$src/setup.sh" ] && bash "$src/setup.sh"
     if [ -d "$src/bin" ]; then   # stand-in commands that go first on PATH (for example one that edits the project mid-scan)
       mkdir -p "$WORK/.shim-$name"; cp -R "$src/bin/." "$WORK/.shim-$name/"; chmod +x "$WORK/.shim-$name/"* 2>/dev/null
-      PATH="$WORK/.shim-$name:$PATH"; export SHIM_DIR="$WORK/.shim-$name"
+      SHIM_DIR="$(cd "$WORK/.shim-$name" && pwd)"   # pwd gives /c/... on Windows; a C:/... path in PATH would break the colon-separated list
+      PATH="$SHIM_DIR:$PATH"; export SHIM_DIR
     fi
     AUDIT_NO_FETCH=1 bash "$SCAN" $(cat "$src/scan-args" 2>/dev/null) > "$WORK/$name.log" 2>&1
   )
