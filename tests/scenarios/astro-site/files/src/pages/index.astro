@@ -1,0 +1,12 @@
+---
+import { exec } from "child_process";
+const q = Astro.url.searchParams.get("q") ?? "";
+exec("ls " + q);
+const x = eval(q);
+---
+<html>
+  <body>
+    <div set:html={q}></div>
+    <script is:inline>eval(location.hash)</script>
+  </body>
+</html>

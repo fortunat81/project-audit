@@ -1,0 +1,15 @@
+---
+const data = { "@type": "Organization", name: "Demo" };
+const title = "Hello";
+---
+<html>
+  <body>
+    <h1>{title}</h1>
+    <div set:html={"<b>fixed text</b>"}></div>
+    <script type="application/ld+json" set:html={JSON.stringify(data)} />
+    <script>
+      const year = new Date().getFullYear();
+      console.log(year);
+    </script>
+  </body>
+</html>
