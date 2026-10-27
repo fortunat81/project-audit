@@ -11,11 +11,12 @@ mod_run() {
   # Circular imports (JavaScript / TypeScript)
   DIM="architecture,modularity,spaghettiness"
   if has_trait node; then
-    if has npx; then
+    if shadowed madge; then skip madge-circular "untrusted mode: the project ships its own madge program in node_modules"
+    elif has npx; then
       local tsarg=""
       [ -f tsconfig.json ] && tsarg="--ts-config tsconfig.json"   # follows @/ path aliases
       note_version madge "$MADGE_PKG"
-      run --json madge-circular madge-circular.json npx --yes "$MADGE_PKG" --circular --json \
+      run --json madge-circular madge-circular.json $NPX_ENV npx --yes "$MADGE_PKG" --circular --json \
         --extensions ts,tsx,js,jsx,mjs,cjs $tsarg \
         --exclude '(^|/)(node_modules|dist|build|out|coverage|audit|\.expo|\.next|\.nuxt|\.svelte-kit|android|ios)/' .
     else skip madge-circular "npx not found ($(install_hint npx))"; fi
@@ -23,10 +24,11 @@ mod_run() {
 
   # Duplication (any language)
   DIM="spaghettiness"
-  if has npx; then
+  if shadowed jscpd; then skip jscpd "untrusted mode: the project ships its own jscpd program in node_modules"
+  elif has npx; then
     note_version jscpd "$JSCPD_PKG"
     mkdir -p "$OUT/jscpd"
-    run --done --stdout jscpd.log jscpd jscpd/jscpd-report.json npx --yes "$JSCPD_PKG" . \
+    run --done --stdout jscpd.log jscpd jscpd/jscpd-report.json $NPX_ENV npx --yes "$JSCPD_PKG" . \
       --reporters json --output "$OUT/jscpd" --silent --ignore "$JSCPD_IGNORE,**/.git/**"
   else skip jscpd "npx not found ($(install_hint npx))"; fi
 

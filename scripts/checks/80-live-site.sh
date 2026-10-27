@@ -84,7 +84,7 @@ mod_run() {
   DIM="quality"
   if has npx; then
     note_version lighthouse "$LIGHTHOUSE_PKG"
-    run --done --json --stdout lighthouse.log lighthouse lighthouse.json npx --yes "$LIGHTHOUSE_PKG" "$url" \
+    run --done --json --stdout lighthouse.log lighthouse lighthouse.json $NPX_ENV npx --yes "$LIGHTHOUSE_PKG" "$url" \
       --output=json --output-path="$OUT/lighthouse.json" --quiet --chrome-flags="--headless=new"
   else skip lighthouse "npx not found ($(install_hint npx))"; fi
 }

@@ -35,6 +35,23 @@ Then, in Claude Code inside any project, ask: "audit this project". If a project
 | `audit-accepted.tsv` | Optional, in the audited project: risks the owner knowingly accepted, each with a reason and an expiry date |
 | `tests/` | Test scenarios with planted problems, and the runner that checks the auditor catches them |
 
+## What runs code from the audited project
+
+Most checks only read files. A few run the project's own code, which is fine for your own projects and risky for anyone else's. For code you didn't write, run `bash scripts/scan.sh --untrusted`: it skips the ones marked "runs project code", says so in the report, and removes secret-looking environment variables first. Network access stays on (rules and advisories are downloaded).
+
+| Check | Reads files only | Runs project code | Notes |
+|---|---|---|---|
+| gitleaks, semgrep, osv-scanner, zizmor, ruff, mobsfscan, lizard | yes | | |
+| madge, jscpd | yes | | Downloaded with `npx` at a pinned version; in untrusted mode a program of the same name inside the project's `node_modules` is not used |
+| The script's own checks (exposed keys, release checks, backend rules, Astro code extraction) | yes | | |
+| tsc | | yes | The project's own compiler and plugins |
+| ESLint | | yes | Loads the project's config file and plugins |
+| knip, expo-doctor | | yes | Load the project's config files |
+| flutter analyze, dart analyze | | yes | Can run package build hooks |
+| npm audit | | yes | Reads the project's `.npmrc` |
+| pip-audit | | yes | Installs the packages to check them, which runs their setup code |
+| `--install-deps` | | yes | Packages are installed with install scripts switched off, but it is still a download from the project's choice of packages |
+
 ## Test the auditor
 
 ```bash

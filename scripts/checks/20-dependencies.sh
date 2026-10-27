@@ -21,6 +21,7 @@ mod_run() {
   # npm audit
   if has_trait node; then
     if ! has npm; then skip npm-audit "npm not found ($(install_hint npx))"
+    elif [ "$UNTRUSTED" = 1 ]; then skip npm-audit "untrusted mode: npm reads the project's own .npmrc (osv-scanner checks the lockfile instead)"
     elif has_trait pm-npm; then
       note_version npm "$(npm --version 2>/dev/null)"
       run --json --match '"auditReportVersion"' npm-audit npm-audit.json npm audit --json
@@ -46,6 +47,7 @@ mod_run() {
   # pip-audit
   if has_trait python; then
     if ! has pip-audit; then skip pip-audit "not installed ($(install_hint pip-audit))"
+    elif [ "$UNTRUSTED" = 1 ]; then skip pip-audit "untrusted mode: pip-audit installs the packages to check them, which runs their setup code (osv-scanner checks the requirements instead)"
     else
       note_version pip-audit "$(pip-audit --version 2>/dev/null | head -1)"
       if [ -f requirements.txt ]; then run --json pip-audit pip-audit.json pip-audit -r requirements.txt -f json

@@ -40,6 +40,7 @@ rand_alnum() { LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$1"; }
 rand_upper() { LC_ALL=C tr -dc 'A-Z2-7' < /dev/urandom | head -c "$1"; }
 export -f rand_alnum rand_upper
 
+export FAKE_SECRET_TOKEN_FOR_TESTS="not-a-real-secret"   # lets a test check that untrusted mode hides secret-looking variables
 PASS=0; FAIL=0; UNTESTED=0
 ok()   { PASS=$((PASS+1)); printf "  PASS      %s\n" "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf "  FAIL      %s\n" "$1"; [ -n "${2:-}" ] && printf "            %s\n" "$2"; }

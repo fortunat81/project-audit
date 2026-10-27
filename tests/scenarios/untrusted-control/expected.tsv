@@ -1,0 +1,2 @@
+# Control: the same project WITHOUT --untrusted does run the project's own program, so the trap is a real one.
+@file	PWNED-tsc.txt LEAKED-ENV.txt

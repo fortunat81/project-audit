@@ -112,7 +112,7 @@ Rules that always hold:
 
 ## Finding record
 
-Give every finding in the report an ID (`F-001`...) and these fields: where (file and line or setting), what is wrong in plain words, severity (critical / high / medium / low, judged by what an attacker gains and how easy it is, not only a tool's number), who fixes it, by when, how to check the fix worked, status (open / fixed and retested / accepted).
+Give every finding in the report an ID and these fields. For findings from the scan use the stable ID in `findings.tsv` (`F-ab12cd`; it stays the same on the next run, so you can say which findings are fixed, new or still open). For Claude-only findings number them `C-001`... in the report. where (file and line or setting), what is wrong in plain words, severity (critical / high / medium / low, judged by what an attacker gains and how easy it is, not only a tool's number), who fixes it, by when, how to check the fix worked, status (open / fixed and retested / accepted).
 
 Suggested deadlines (the owner can change them): critical, stop and fix now; high, before launch; medium, within 30 days; low, at the next planned update.
 

@@ -1,0 +1,10 @@
+# Untrusted mode must never run code from the project, and must hide secrets from the scanners.
+@meta	untrusted=yes
+trust-mode	done	-	-
+tsc	skipped.*untrusted	-	-
+eslint	skipped.*untrusted	-	-
+npm-audit	skipped.*untrusted	-	-
+madge-circular	skipped.*untrusted	-	-
+jscpd	skipped.*untrusted	-	-
+knip	skipped.*untrusted	-	-
+@no-file	PWNED-eslint-config.txt PWNED-tsc.txt PWNED-eslint.txt PWNED-madge.txt PWNED-jscpd.txt PWNED-knip.txt LEAKED-ENV.txt

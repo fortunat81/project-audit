@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Stand-in that reports whether secret-looking environment variables reached the scanners.
+[ -n "${FAKE_SECRET_TOKEN_FOR_TESTS:-}" ] && echo leaked > "$PWD/LEAKED-ENV.txt"
+PATH="${PATH#"$SHIM_DIR":}"
+command -v semgrep >/dev/null 2>&1 || exit 0
+exec semgrep "$@"

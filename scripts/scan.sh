@@ -5,7 +5,8 @@
 #
 # Usage (run from the project root):
 #   bash scan.sh                  run the scan
-#   bash scan.sh --detect         show what was detected and which modules apply (changes nothing)
+#   bash scan.sh --untrusted      (before any mode) skip every check that runs the project's own code; use it for code you did not write
+#   bash scan.sh --all         show what was detected and which modules apply (changes nothing)
 #   bash scan.sh --all            scan this folder and every project folder in it, each with its own checks
 #   bash scan.sh --projects       list project folders (this one and any in subfolders); audit each (changes nothing)
 #   bash scan.sh --verify-report  check the finished AUDIT.md and scores.json for mistakes (changes nothing)
@@ -76,6 +77,28 @@ AUDIT_URL="${AUDIT_URL:-$(conf_get url)}"
 CONF_SKIP=",$(conf_get skip | tr -d ' '),"
 CONF_IGNORE="$(conf_get ignore | tr -d ' ')"
 conf_skipped() { case "$CONF_SKIP" in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
+
+# --- Untrusted mode ------------------------------------------------------------
+# For code you did not write. Some checks run the project's OWN code (its ESLint config, its
+# compiler and plugins, its package scripts), and a hostile project could use that to run
+# commands on this machine. In untrusted mode those checks are skipped and said so. What still runs
+# only READS files: gitleaks, semgrep, osv-scanner, madge, jscpd, lizard, ruff, zizmor, mobsfscan and
+# the script's own pattern checks. Secrets in this shell's environment are removed first.
+# Network stays on (rules and advisories are downloaded). Switch it on with --untrusted, AUDIT_UNTRUSTED=1
+# or untrusted=yes in .audit.conf.
+UNTRUSTED="${AUDIT_UNTRUSTED:-$(conf_get untrusted)}"
+[ "${1:-}" = "--untrusted" ] && { UNTRUSTED=1; shift; }
+case "$UNTRUSTED" in 1|yes|true) UNTRUSTED=1 ;; *) UNTRUSTED=0 ;; esac
+NPX_ENV=""
+if [ "$UNTRUSTED" = 1 ]; then
+  export AUDIT_UNTRUSTED=1
+  # Keys, tokens and passwords in the environment are not needed by any read-only check
+  for _v in $(env | cut -d= -f1 | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' | grep -Ei 'KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|^AWS_|^GH_|^GITHUB_|^NPM_|^AZURE_|^SSH_AUTH_SOCK$' | grep -v '^AUDIT_'); do unset "$_v" 2>/dev/null; done
+  # npx tools: ignore a project .npmrc's registry and never run install scripts
+  NPX_ENV="env npm_config_ignore_scripts=true npm_config_registry=https://registry.npmjs.org/"
+fi
+# A program of this name shipped inside the project would win over the pinned npx download
+shadowed() { [ "$UNTRUSTED" = 1 ] && [ -e "node_modules/.bin/$1" ]; }
 
 # Install command for a Python-based tool, using whatever Python installer exists here.
 py_install_cmd() {
@@ -418,6 +441,7 @@ fi
 # can't run code during the install, and package-lock.json / pnpm-lock.yaml are not rewritten.
 # Ask the user first: it downloads packages.
 if [ "${1:-}" = "--install-deps" ]; then
+  [ "$UNTRUSTED" = 1 ] && { echo "REFUSED: untrusted mode never installs a project's packages (they can run code)"; exit 1; }
   [ -f package.json ] || { echo "NOTHING: no package.json in this folder"; exit 0; }
   [ -d node_modules ] && { echo "ALREADY: node_modules exists"; exit 0; }
   if [ -f pnpm-lock.yaml ]; then
@@ -594,6 +618,13 @@ if [ -z "$TO" ]; then
   echo "time_limit=unavailable" >> "$OUT/meta.txt"
 else
   echo "time_limit=300s" >> "$OUT/meta.txt"
+fi
+if [ "$UNTRUSTED" = 1 ]; then
+  echo "untrusted=yes" >> "$OUT/meta.txt"
+  DIM="general"
+  record trust-mode "done: untrusted mode, checks that run the project's own code were skipped and secret-looking environment variables were removed" "-" "-"
+else
+  echo "untrusted=no" >> "$OUT/meta.txt"
 fi
 if is_git && ! git check-ignore -q audit/ 2>/dev/null; then
   echo "WARNING: audit/ is not git-ignored. Don't commit it. Run: bash scan.sh --add-gitignore"

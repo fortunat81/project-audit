@@ -19,7 +19,8 @@ mod_run() {
 
   # TypeScript: use the project's own compiler so versions and settings match
   if has_trait typescript; then
-    if has_trait node && [ ! -d node_modules ]; then skip tsc "dependencies not installed (offer: scan.sh --install-deps)"
+    if [ "$UNTRUSTED" = 1 ]; then skip tsc "untrusted mode: tsc would run the project's own compiler and plugins"
+    elif has_trait node && [ ! -d node_modules ]; then skip tsc "dependencies not installed (offer: scan.sh --install-deps)"
     elif has_trait astro && [ ! -f .astro/types.d.ts ]; then
       # Astro writes its type files to .astro/ (npx astro sync, also done by dev and build). Without them
       # tsc reports errors that are not real (for example "Property 'env' does not exist on ImportMeta").
@@ -33,7 +34,8 @@ mod_run() {
 
   # ESLint: the project's own binary so its plugins and config load
   if has_trait node; then
-    if ! eslint_config_found; then skip eslint "no ESLint config in the project (looked for eslint.config.*, .eslintrc*, package.json)"
+    if [ "$UNTRUSTED" = 1 ]; then skip eslint "untrusted mode: ESLint would run the project's config file and plugins as code"
+    elif ! eslint_config_found; then skip eslint "no ESLint config in the project (looked for eslint.config.*, .eslintrc*, package.json)"
     elif [ ! -d node_modules ]; then skip eslint "dependencies not installed (offer: scan.sh --install-deps)"
     elif [ -f node_modules/.bin/eslint ]; then
       note_version eslint "$(node_modules/.bin/eslint --version 2>/dev/null)"
@@ -52,12 +54,14 @@ mod_run() {
 
   # Dart / Flutter
   if has_trait flutter; then
-    if has flutter; then
+    if [ "$UNTRUSTED" = 1 ]; then skip flutter-analyze "untrusted mode: the analyzer can run package build hooks from the project"
+    elif has flutter; then
       note_version flutter "$(flutter --version 2>/dev/null | head -1)"
       run --codes "1" --match ' • ' flutter-analyze flutter-analyze.txt flutter analyze --no-pub
     else skip flutter-analyze "Flutter SDK not found ($(install_hint flutter))"; fi
   elif has_trait dart; then
-    if has dart; then
+    if [ "$UNTRUSTED" = 1 ]; then skip dart-analyze "untrusted mode: the analyzer can run package build hooks from the project"
+    elif has dart; then
       note_version dart "$(dart --version 2>&1 | head -1)"
       run --codes "1 2 3" --match ' - ' dart-analyze dart-analyze.txt dart analyze
     else skip dart-analyze "Dart SDK not found"; fi
