@@ -15,6 +15,7 @@ import os
 import platform
 import re
 import shutil
+import site
 import subprocess
 import sys
 import time
@@ -65,6 +66,9 @@ def extend_path():
         appdata = os.environ.get("APPDATA")
         if appdata:
             extra += glob.glob(os.path.join(appdata, "Python", "Python*", "Scripts"))
+        if local:   # the Microsoft Store Python keeps its "pip --user" packages inside its own folder
+            extra += glob.glob(os.path.join(local, "Packages", "PythonSoftwareFoundation.Python.*", "LocalCache", "local-packages", "Python*", "Scripts"))
+        extra.append(os.path.join(site.getuserbase(), "Scripts"))   # wherever this Python puts "pip --user" tools
     extra.append(os.path.join(home, ".local", "bin"))
     extra += glob.glob(os.path.join(home, "Library", "Python", "*", "bin"))
     parts = os.environ.get("PATH", "").split(os.pathsep)

@@ -134,5 +134,34 @@ def main():
     os.environ.pop("AUDIT_UNTRUSTED", None)
 
 
+def pip_user_scripts_lookup():
+    """pip install --user puts tools in a Scripts folder that is often not on PATH. On Windows that folder is under
+    the Python's own user base, which for the Microsoft Store Python is inside LOCALAPPDATA\\Packages (not APPDATA)."""
+    import site
+    saved = (dict(os.environ), audit_core.is_windows, site.getuserbase)
+    try:
+        home = tempfile.mkdtemp(prefix="winhome")
+        store = os.path.join(home, "Local", "Packages", "PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0",
+                             "LocalCache", "local-packages", "Python313", "Scripts")
+        custom_base = os.path.join(home, "custom-base")
+        custom = os.path.join(custom_base, "Scripts")
+        for d in (store, custom):
+            os.makedirs(d)
+        os.environ["LOCALAPPDATA"] = os.path.join(home, "Local")
+        os.environ["APPDATA"] = os.path.join(home, "Roaming")
+        os.environ["PATH"] = os.path.join(home, "nothing")
+        audit_core.is_windows = lambda: True
+        site.getuserbase = lambda: custom_base
+        audit_core.extend_path()
+        parts = os.environ["PATH"].split(os.pathsep)
+        say(store in parts, "the Microsoft Store Python's pip --user Scripts folder is added to PATH", parts)
+        say(custom in parts, "the running Python's own user Scripts folder is added to PATH", parts)
+    finally:
+        os.environ.clear()
+        os.environ.update(saved[0])
+        audit_core.is_windows, site.getuserbase = saved[1], saved[2]
+
+
 if __name__ == "__main__":
     main()
+    pip_user_scripts_lookup()
