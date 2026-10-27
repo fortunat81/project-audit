@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<style>
+{{CSS}}</style>
+</head>
+<body>
+<header class="top"><div class="topin">
+ <nav>
+  <a href="#summary" data-i18n="nav_summary"></a><a href="#findings-sec" data-i18n="nav_findings"></a><a href="#fixes-sec" data-i18n="nav_fixes"></a>
+  <a href="#checklist-sec" data-i18n="nav_checklist"></a><a href="#coverage-sec" data-i18n="nav_coverage"></a><a href="#report-sec" data-i18n="nav_report"></a>
+ </nav>
+ <div class="tools" id="tools" hidden><button id="lang" type="button"></button><button id="theme" type="button"></button></div>
+</div></header>
+<main>
+<noscript><div class="notice">JavaScript is off in this viewer: showing the English, read-only view. Open the file in a web browser for French, light/dark, filters and fix approval.</div></noscript>
+<div id="summary">
+ <h1 id="project">{{S_PROJECT}}</h1><p class="sub" id="meta">{{S_META}}</p>
+ <div id="verdict">{{S_VERDICT}}</div><div id="notices">{{S_NOTICES}}</div><div class="cards" id="cards">{{S_CARDS}}</div>
+ <div id="scores">{{S_SCORES}}</div>
+</div>
+
+<section id="findings-sec">
+<h2 data-i18n="findings"></h2>
+<div class="filters" id="filters">
+ <label><input type="checkbox" data-sev="critical" checked> <span data-i18n="sev_critical"></span></label>
+ <label><input type="checkbox" data-sev="high" checked> <span data-i18n="sev_high"></span></label>
+ <label><input type="checkbox" data-sev="medium" checked> <span data-i18n="sev_medium"></span></label>
+ <label><input type="checkbox" data-sev="low" checked> <span data-i18n="sev_low"></span></label>
+ <label><input type="checkbox" data-sev="info" checked> <span data-i18n="sev_info"></span></label>
+ <select id="source"></select>
+ <input type="search" id="q" data-i18n-ph="search" size="26">
+ <span class="muted" id="count"></span>
+</div>
+<div class="tablewrap"><table id="findings"><thead><tr>
+ <th data-k="severity" data-i18n="th_severity"></th><th data-k="id" data-i18n="th_id"></th><th data-k="source" data-i18n="th_tool"></th>
+ <th data-k="rule" data-i18n="th_what"></th><th data-k="file" data-i18n="th_where"></th></tr></thead><tbody>{{S_FINDINGS}}</tbody></table></div>
+<div class="empty" id="none" hidden data-i18n="no_match"></div>
+<p class="muted" data-i18n="findings_note"></p>
+</section>
+
+<section id="fixes-sec">
+<h2 data-i18n="fixes"></h2>
+<p class="muted" data-i18n="fixes_intro"></p>
+<div id="fixlist">{{S_FIXES}}</div>
+<p class="muted" id="serverhint" hidden></p>
+</section>
+
+<section id="progress-sec" hidden>
+<h2 data-i18n="progress"></h2>
+<p><span class="badge" id="state"></span> <span class="muted" id="reportready"></span></p>
+<pre class="source" id="log"></pre>
+</section>
+
+<section id="checklist-sec"{{S_CHECK_HIDDEN}}>
+<h2 data-i18n="checklist"></h2>
+<div class="tablewrap"><table id="checklist"><thead><tr><th data-i18n="th_n"></th><th data-i18n="th_item"></th><th data-i18n="th_mark"></th><th data-i18n="th_by"></th><th data-i18n="th_evidence"></th></tr></thead><tbody>{{S_CHECKLIST}}</tbody></table></div>
+</section>
+
+<section id="coverage-sec">
+<h2 data-i18n="coverage"></h2>
+<div class="tablewrap"><table id="coverage"><thead><tr><th data-i18n="th_check"></th><th data-i18n="th_result"></th><th data-i18n="th_feeds"></th></tr></thead><tbody>{{S_COVERAGE}}</tbody></table></div>
+</section>
+
+<section id="report-sec">
+<h2 data-i18n="report"></h2>
+<div class="notice" id="report-note" hidden><span id="report-note-text"></span> <button type="button" id="translate-btn" hidden data-i18n="translate_btn"></button></div>
+<div class="seg" id="seg"><button type="button" data-view="formatted" class="on" data-i18n="formatted"></button><button type="button" data-view="source" data-i18n="source"></button></div>
+<div class="report" id="report-formatted">{{S_REPORT}}</div>
+<pre class="source" id="report-source" hidden></pre>
+<div class="empty" id="no-report"{{S_NOREPORT_HIDDEN}} data-i18n="no_report"></div>
+</section>
+</main>
+
+<div class="sendbar" id="sendbar" hidden><div class="sendin">
+ <strong><span id="selcount">0</span> <span data-i18n="selected"></span></strong>
+ <span style="display:flex;gap:8px;flex-wrap:wrap">
+  <button type="button" id="selall" data-i18n="select_all"></button><button type="button" id="clearsel" data-i18n="clear"></button>
+  <button type="button" id="dl" data-i18n="download"></button><button type="button" id="copy" data-i18n="copy"></button><button type="button" id="fixbtn" class="primary" data-i18n="fix_btn" hidden></button>
+ </span><span class="muted" id="copied" aria-live="polite"></span>
+</div></div>
+
+<!--AUDIT_SERVER-->
+<script type="application/json" id="data">{{DATA}}</script>
+<script>
+{{JS}}</script>
+</body>
+</html>

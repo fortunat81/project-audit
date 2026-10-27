@@ -317,55 +317,75 @@ def pick(mapping, lang="en"):
     return mapping.get(lang) or mapping.get("en") or mapping.get("fr") or ""
 
 
-def static_fragments(data):
-    """The page content as plain HTML (English), so it shows even where scripts do not run.
-    The page script replaces all of this with the interactive, translated version."""
-    en = I18N["en"]
-    f = {}
-    f["S_PROJECT"] = _e(data["project"])
-    f["S_META"] = _e(en["meta_line"].format(**data["meta"]))
-    vk = data["verdict"] or "none"
-    text = en["verdict_" + vk]
-    tail = en["mode_line"].format(n=data["level"], mode=en.get(data["mode"] or "full", "")) if data["verdict"] else en["verdict_none_hint"]
-    f["S_VERDICT"] = '<div class="verdict v-%s"><span>%s</span>%s</div>' % (vk, _e(text), _e(tail))
-    f["S_NOTICES"] = "".join('<div class="notice">%s%s</div>' % (("%d " % n["n"]) if n.get("n") is not None else "", _e(en[n["key"]])) for n in data["notices"])
+def _static_cards(data, en):
     counts = {s: sum(1 for x in data["findings"] if x["severity"] == s) for s in SEVERITIES}
     ran = sum(1 for m in data["manifest"] if m["cls"] in ("ok", "find"))
-    f["S_CARDS"] = "".join('<div class="card s-%s"><b>%d</b><span>%s</span></div>' % (s, counts[s], _e(en["sev_" + s])) for s in SEVERITIES)         + '<div class="card"><b>%d / %d</b><span>%s</span></div>' % (ran, len(data["manifest"]), _e(en["checks_ran"]))
+    cards = "".join('<div class="card s-%s"><b>%d</b><span>%s</span></div>' % (s, counts[s], _e(en["sev_" + s])) for s in SEVERITIES)
+    return cards + '<div class="card"><b>%d / %d</b><span>%s</span></div>' % (ran, len(data["manifest"]), _e(en["checks_ran"]))
+
+
+def _static_scores(data, en):
     bars = []
     for k, v in data["scores"].items():
         label = _e(en.get("dim_" + k, k))
         if v is None:
             bars.append('<div class="bar"><b>%s</b><span></span><i>%s</i></div>' % (label, _e(en["not_assessed"])))
-        else:
-            conf = data["confidence"].get(k)
-            bars.append('<div class="bar"><b>%s</b><div class="track"><div class="fill" style="width:%d%%"></div></div><i>%d%s</i></div>'
-                        % (label, max(0, min(100, int(v))), int(v), (" (%s)" % _e(conf)) if conf else ""))
-    f["S_SCORES"] = '<section><h2>%s</h2><div class="bars">%s</div></section>' % (_e(en["scores"]), "".join(bars)) if bars else ""
+            continue
+        conf = data["confidence"].get(k)
+        bars.append('<div class="bar"><b>%s</b><div class="track"><div class="fill" style="width:%d%%"></div></div><i>%d%s</i></div>'
+                    % (label, max(0, min(100, int(v))), int(v), (" (%s)" % _e(conf)) if conf else ""))
+    if not bars:
+        return ""
+    return '<section><h2>%s</h2><div class="bars">%s</div></section>' % (_e(en["scores"]), "".join(bars))
+
+
+def _static_findings(data, en):
     rows = []
     for x in data["findings"][:400]:   # the script shows them all; without it the first 400 are enough to read
         where = x["file"] + (":%s" % x["line"] if x["line"] not in ("", None) else "")
+        what = _e(x["rule"] + ("  (x%d)" % x["count"] if x["count"] > 1 else ""))
+        if x.get("desc"):
+            what += '<br><small class="muted">%s</small>' % _e(x["desc"]["en"])
         rows.append('<tr><td><span class="pill p-%s">%s</span></td><td>%s</td><td>%s</td><td>%s</td><td class="file">%s</td></tr>' % (
-            _e(x["severity"]), _e(en["sev_" + x["severity"]]), _e(x["id"]), _e(x["source"]),
-            _e(x["rule"] + ("  (x%d)" % x["count"] if x["count"] > 1 else "")) + (('<br><small class="muted">%s</small>' % _e(x["desc"]["en"])) if x.get("desc") else ""), _e(where)))
-    f["S_FINDINGS"] = "".join(rows)
-    fx = []
+            _e(x["severity"]), _e(en["sev_" + x["severity"]]), _e(x["id"]), _e(x["source"]), what, _e(where)))
+    return "".join(rows)
+
+
+def _static_fixes(data, en):
+    cards = []
     for x in data["fixes"]:
         meta = ['<span class="badge">%s</span>' % _e(en["who_you"] if x["who"] == "you" else en["who_claude"])]
         if x.get("finding"):
             meta.append('<span class="badge">%s</span>' % _e(x["finding"]))
         if x.get("file"):
             meta.append('<span class="file">%s</span>' % _e(x["file"]))
-        body = "".join("<p><b>%s:</b> %s</p>" % (_e(en[k]), _e(pick(x[key]))) for k, key in (("why", "why"), ("change", "change"), ("verify", "verify")) if x.get(key))
-        fx.append('<div class="fix"><h3>%s  %s</h3><div class="meta">%s</div>%s</div>' % (_e(x["id"]), _e(pick(x["title"])), "".join(meta), body))
-    f["S_FIXES"] = "".join(fx) or '<div class="empty">%s</div>' % _e(data["fixes_error"] or en["fixes_none"])
-    f["S_CHECK_HIDDEN"] = "" if data["checklist"] else " hidden"
-    f["S_CHECKLIST"] = "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % _e(c) for c in (r["n"], pick(r["item"]), r["mark"], r["by"], pick(r["evidence"]))) for r in data["checklist"])
-    f["S_COVERAGE"] = "".join('<tr class="c-%s"><td>%s</td><td>%s</td><td>%s</td></tr>' % (m["cls"], _e(m["tool"]), _e(pick(m["status_i18n"])), _e(pick(m["dim_i18n"]))) for m in data["manifest"])
+        body = "".join("<p><b>%s:</b> %s</p>" % (_e(en[k]), _e(pick(x[k]))) for k in ("why", "change", "verify") if x.get(k))
+        cards.append('<div class="fix"><h3>%s  %s</h3><div class="meta">%s</div>%s</div>' % (_e(x["id"]), _e(pick(x["title"])), "".join(meta), body))
+    return "".join(cards) or '<div class="empty">%s</div>' % _e(data["fixes_error"] or en["fixes_none"])
+
+
+def static_fragments(data):
+    """The page content as plain HTML (English), so it shows even where scripts do not run.
+    The page script replaces all of this with the interactive, translated version."""
+    en = I18N["en"]
+    vk = data["verdict"] or "none"
+    tail = en["mode_line"].format(n=data["level"], mode=en.get(data["mode"] or "full", "")) if data["verdict"] else en["verdict_none_hint"]
     rep = data["reports"].get("en") or data["reports"].get(data["primary"]) or {}
-    f["S_REPORT"] = rep.get("html", "")   # already built and escaped by render_markdown
-    f["S_NOREPORT_HIDDEN"] = " hidden" if data["reports"] else ""
-    return f
+    return {
+        "S_PROJECT": _e(data["project"]),
+        "S_META": _e(en["meta_line"].format(**data["meta"])),
+        "S_VERDICT": '<div class="verdict v-%s"><span>%s</span>%s</div>' % (vk, _e(en["verdict_" + vk]), _e(tail)),
+        "S_NOTICES": "".join('<div class="notice">%s%s</div>' % (("%d " % n["n"]) if n.get("n") is not None else "", _e(en[n["key"]])) for n in data["notices"]),
+        "S_CARDS": _static_cards(data, en),
+        "S_SCORES": _static_scores(data, en),
+        "S_FINDINGS": _static_findings(data, en),
+        "S_FIXES": _static_fixes(data, en),
+        "S_CHECK_HIDDEN": "" if data["checklist"] else " hidden",
+        "S_CHECKLIST": "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % _e(c) for c in (r["n"], pick(r["item"]), r["mark"], r["by"], pick(r["evidence"]))) for r in data["checklist"]),
+        "S_COVERAGE": "".join('<tr class="c-%s"><td>%s</td><td>%s</td><td>%s</td></tr>' % (m["cls"], _e(m["tool"]), _e(pick(m["status_i18n"])), _e(pick(m["dim_i18n"]))) for m in data["manifest"]),
+        "S_REPORT": rep.get("html", ""),   # already built and escaped by render_markdown
+        "S_NOREPORT_HIDDEN": " hidden" if data["reports"] else "",
+    }
 
 
 def fill_labels(page):
@@ -375,47 +395,45 @@ def fill_labels(page):
     return re.sub(pattern, lambda m: m.group(1) + _e(en.get(m.group(3), "")) + m.group(4), page)
 
 
-def build(folder):
-    meta = read_meta(folder)
-    findings = read_findings(folder)
-    manifest = []
+def read_manifest(folder):
+    rows = []
     for line in (read(folder, "manifest.tsv") or "").splitlines()[1:]:
         p = line.split("\t")
         if len(p) >= 2 and p[0]:
-            manifest.append({"tool": p[0], "status": p[1], "cls": status_class(p[1]), "dimension": p[4] if len(p) > 4 else "",
-                             "status_i18n": audit_i18n.translate_status(p[1]), "dim_i18n": audit_i18n.translate_dimensions(p[4] if len(p) > 4 else "")})
-    scores = None
+            dimension = p[4] if len(p) > 4 else ""
+            rows.append({"tool": p[0], "status": p[1], "cls": status_class(p[1]), "dimension": dimension,
+                         "status_i18n": audit_i18n.translate_status(p[1]), "dim_i18n": audit_i18n.translate_dimensions(dimension)})
+    return rows
+
+
+def read_scores(folder):
     try:
         scores = json.loads(read(folder, "scores.json") or "")
     except ValueError:
-        pass
-    if not isinstance(scores, dict):
-        scores = None
-    primary = audit_translate.primary_language(folder)
-    reports, checklist_by_lang = {}, {}
+        return None
+    return scores if isinstance(scores, dict) else None
+
+
+def load_reports(folder, primary):
+    """The written report in each language that exists, and the launch checklist merged from them."""
+    reports, by_lang = {}, {}
     for lang in audit_translate.LANGS:
         text = read(folder, os.path.basename(audit_translate.report_path(folder, lang, primary)))
         if text:
             reports[lang] = {"html": render_markdown(text), "source": text}
-            checklist_by_lang[lang] = {r["n"]: r for r in read_checklist(text)}
-    numbers = sorted(set().union(*[set(c) for c in checklist_by_lang.values()])) if checklist_by_lang else []
+            by_lang[lang] = {r["n"]: r for r in read_checklist(text)}
     checklist = []
-    for n in numbers:
-        rows = {lg: c[n] for lg, c in checklist_by_lang.items() if n in c}
+    for n in sorted(set().union(*[set(c) for c in by_lang.values()])) if by_lang else []:
+        rows = {lg: c[n] for lg, c in by_lang.items() if n in c}
         first = rows.get(primary) or next(iter(rows.values()))
         builtin = audit_i18n.CHECKLIST.get(n)
         item = {"en": builtin[0], "fr": builtin[1]} if builtin else {lg: r["item"] for lg, r in rows.items()}
         checklist.append({"n": n, "group": first["group"], "mark": first["mark"], "by": first["by"], "item": item,
                           "evidence": {lg: r["evidence"] for lg, r in rows.items() if r["evidence"]}})
-    fixes, fixes_error = read_fixes(folder)
-    for fx in fixes:
-        for key in ("title", "why", "change", "verify"):
-            fx[key] = lang_map(fx[key], primary)
-    for finding in findings:
-        d = audit_i18n.describe_rule(finding["rule"])
-        finding["desc"] = {"en": d[0], "fr": d[1]} if d else None
-    project = os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(folder)))) or "project"
+    return reports, checklist
 
+
+def build_notices(meta, manifest):
     notices = []
     if meta.get("consistent") == "no":
         notices.append({"key": "n_inconsistent"})
@@ -424,362 +442,58 @@ def build(folder):
     gaps = [m for m in manifest if m["cls"] in ("bad", "skip", "warn")]
     if gaps:
         notices.append({"key": "n_gaps", "n": len(gaps)})
+    return notices
 
-    verdict = scores.get("verdict") if scores and scores.get("verdict") in audit_verdict.VERDICT_TEXT else None
-    data = {
-        "project": project, "run": os.path.basename(os.path.normpath(folder)),
+
+def build_data(folder):
+    """Everything the page shows, as one dictionary (also embedded in the page for its script)."""
+    meta = read_meta(folder)
+    manifest = read_manifest(folder)
+    scores = read_scores(folder) or {}
+    primary = audit_translate.primary_language(folder)
+    reports, checklist = load_reports(folder, primary)
+    findings = read_findings(folder)
+    for finding in findings:
+        d = audit_i18n.describe_rule(finding["rule"])
+        finding["desc"] = {"en": d[0], "fr": d[1]} if d else None
+    fixes, fixes_error = read_fixes(folder)
+    for fx in fixes:
+        for key in ("title", "why", "change", "verify"):
+            fx[key] = lang_map(fx[key], primary)
+    verdict = scores.get("verdict") if scores.get("verdict") in audit_verdict.VERDICT_TEXT else None
+    return {
+        "project": os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(folder)))) or "project",
+        "run": os.path.basename(os.path.normpath(folder)),
         "meta": {"date": meta.get("date", ""), "commit": meta.get("commit", "none")[:8], "branch": meta.get("branch", "none")},
-        "primary": primary,
-        "verdict": verdict, "level": scores.get("level") if scores else None, "mode": scores.get("mode") if scores else None,
-        "scores": (scores or {}).get("scores") or {}, "confidence": (scores or {}).get("confidence") or {},
-        "findings": findings, "manifest": manifest, "checklist": checklist, "fixes": fixes,
-        "fixes_error": fixes_error, "notices": notices, "i18n": I18N, "reports": reports,
+        "primary": primary, "verdict": verdict, "level": scores.get("level"), "mode": scores.get("mode"),
+        "scores": scores.get("scores") or {}, "confidence": scores.get("confidence") or {},
+        "findings": findings, "manifest": manifest, "checklist": checklist, "fixes": fixes, "fixes_error": fixes_error,
+        "notices": build_notices(meta, manifest), "i18n": I18N, "reports": reports,
         "missing_languages": [lg for lg, _ in audit_translate.missing(folder)[1]],
     }
+
+
+def build(folder):
+    data = build_data(folder)
     # "<" ">" "&" are escaped so nothing in the data can end the script block or open a tag
     data_json = json.dumps(data).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     page = fill_labels(PAGE)
     for key, value in static_fragments(data).items():
         page = page.replace("{{%s}}" % key, value)
-    return page.replace("{{TITLE}}", html.escape("Audit: " + project)).replace("{{DATA}}", data_json)
+    return page.replace("{{TITLE}}", html.escape("Audit: " + data["project"])).replace("{{DATA}}", data_json)
 
 
-PAGE = r"""<!doctype html>
-<html lang="en" data-theme="auto">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{TITLE}}</title>
-<style>
-:root{--bg:#f6f7f9;--panel:#ffffff;--text:#1c2330;--muted:#5d6878;--line:#e1e5eb;--accent:#2f5bd8;--accent-text:#ffffff;
---critical:#b3122b;--high:#c2410c;--medium:#a16207;--low:#2f5fa8;--info:#5d6878;
---ok:#1f7a45;--warn:#a16207;--bad:#b3122b;--skip:#5d6878;--find:#c2410c;--code:#eef1f6}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#12151b;--panel:#1b2029;--text:#e6e9ef;--muted:#9aa5b5;--line:#2c3441;--accent:#7ea2ff;--accent-text:#0e1320;
---critical:#ff6b81;--high:#ff8a5c;--medium:#e6b450;--low:#7ea2ff;--info:#9aa5b5;--ok:#4cc38a;--warn:#e6b450;--bad:#ff6b81;--skip:#9aa5b5;--find:#ff8a5c;--code:#232a36}}
-:root[data-theme="dark"]{--bg:#12151b;--panel:#1b2029;--text:#e6e9ef;--muted:#9aa5b5;--line:#2c3441;--accent:#7ea2ff;--accent-text:#0e1320;
---critical:#ff6b81;--high:#ff8a5c;--medium:#e6b450;--low:#7ea2ff;--info:#9aa5b5;--ok:#4cc38a;--warn:#e6b450;--bad:#ff6b81;--skip:#9aa5b5;--find:#ff8a5c;--code:#232a36}
-*{box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-header.top{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line)}
-.topin{max-width:1100px;margin:0 auto;padding:8px 16px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between}
-nav{display:flex;flex-wrap:wrap;gap:4px 14px} nav a{color:var(--muted);text-decoration:none;font-weight:600;font-size:.9rem;padding:2px 0}
-nav a:hover{color:var(--accent)}
-.tools{display:flex;gap:8px}
-button,.btn{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:8px;padding:5px 12px}
-button:hover{border-color:var(--accent)}
-button.primary{background:var(--accent);color:var(--accent-text);border-color:var(--accent);font-weight:600}
-button:disabled{opacity:.5;cursor:not-allowed}
-main{max-width:1100px;margin:0 auto;padding:20px 16px 120px}
-h1{margin:4px 0 0;font-size:1.5rem} h2{font-size:1.15rem;margin:0 0 12px}
-.sub{color:var(--muted);margin:2px 0 14px}
-section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin:16px 0;scroll-margin-top:64px}
-.verdict{border-radius:10px;padding:14px 16px;margin:12px 0;border:1px solid var(--line);background:var(--panel);border-left-width:6px}
-.verdict span{font-weight:700;font-size:1.15rem;margin-right:8px}
-.v-dont-launch{border-left-color:var(--critical)} .v-launch-with-limits{border-left-color:var(--medium)}
-.v-no-blocking-problems{border-left-color:var(--ok)} .v-none{border-left-color:var(--info)}
-.notice{border:1px solid var(--medium);border-radius:8px;padding:8px 12px;margin:8px 0;background:var(--panel)}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin:12px 0}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
-.card b{display:block;font-size:1.5rem} .card span{color:var(--muted);font-size:.85rem}
-.s-critical b{color:var(--critical)} .s-high b{color:var(--high)} .s-medium b{color:var(--medium)} .s-low b{color:var(--low)} .s-info b{color:var(--info)}
-.filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}
-.filters label{display:inline-flex;gap:4px;align-items:center;cursor:pointer}
-input[type=search],select,textarea{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
-.tablewrap{overflow-x:auto}
-table{border-collapse:collapse;width:100%} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-th{color:var(--muted);font-weight:600;font-size:.85rem;white-space:nowrap} #findings th{cursor:pointer}
-td.file{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85rem;word-break:break-all}
-.pill{display:inline-block;border-radius:999px;padding:1px 9px;font-size:.78rem;font-weight:600;color:#fff;background:var(--info)}
-.p-critical{background:var(--critical)} .p-high{background:var(--high)} .p-medium{background:var(--medium)} .p-low{background:var(--low)} .p-info{background:var(--info)}
-.c-ok td:nth-child(2){color:var(--ok)} .c-find td:nth-child(2){color:var(--find)} .c-warn td:nth-child(2){color:var(--warn)}
-.c-bad td:nth-child(2){color:var(--bad);font-weight:600} .c-skip td:nth-child(2){color:var(--skip)}
-.bars{display:grid;gap:8px} .bar{display:grid;grid-template-columns:170px 1fr 130px;gap:10px;align-items:center}
-.track{background:var(--line);border-radius:6px;height:10px} .fill{background:var(--accent);height:10px;border-radius:6px}
-.bar i{color:var(--muted);font-style:normal}
-.fix{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0}
-.fix.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
-.fix h3{margin:0 0 4px;font-size:1rem} .fix .meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;color:var(--muted);font-size:.85rem;margin-bottom:6px}
-.fix label.ok{display:inline-flex;gap:6px;align-items:center;font-weight:600;cursor:pointer}
-.fix details{margin-top:6px} .fix summary{cursor:pointer;color:var(--muted)} .fix textarea{width:100%;min-height:52px;margin-top:8px}
-.badge{border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:.78rem}
-.sendbar{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:10px 16px;z-index:6}
-.sendin{max-width:1100px;margin:0 auto;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
-.report h2,.report h3,.report h4,.report h5{margin:18px 0 8px} .report h2{font-size:1.25rem;border-bottom:1px solid var(--line);padding-bottom:4px}
-.report p,.report li{max-width:80ch} .report ul,.report ol{padding-left:22px}
-.report code{background:var(--code);border-radius:4px;padding:1px 5px;font:.88em ui-monospace,Menlo,Consolas,monospace}
-.report pre{background:var(--code);border-radius:8px;padding:10px 12px;overflow-x:auto} .report pre code{background:none;padding:0}
-.report blockquote{border-left:4px solid var(--line);margin:8px 0;padding:2px 12px;color:var(--muted)}
-.report a{color:var(--accent)} .report hr{border:0;border-top:1px solid var(--line)}
-pre.source{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:8px}
-.seg button{border:0;border-radius:0} .seg button.on{background:var(--accent);color:var(--accent-text)}
-.muted{color:var(--muted)} .empty{padding:12px;color:var(--muted)}
-@media (max-width:640px){.bar{grid-template-columns:1fr}}
-@media print{header.top,.sendbar{display:none}}
-</style>
-</head>
-<body>
-<header class="top"><div class="topin">
- <nav>
-  <a href="#summary" data-i18n="nav_summary"></a><a href="#findings-sec" data-i18n="nav_findings"></a><a href="#fixes-sec" data-i18n="nav_fixes"></a>
-  <a href="#checklist-sec" data-i18n="nav_checklist"></a><a href="#coverage-sec" data-i18n="nav_coverage"></a><a href="#report-sec" data-i18n="nav_report"></a>
- </nav>
- <div class="tools" id="tools" hidden><button id="lang" type="button"></button><button id="theme" type="button"></button></div>
-</div></header>
-<main>
-<noscript><div class="notice">JavaScript is off in this viewer: showing the English, read-only view. Open the file in a web browser for French, light/dark, filters and fix approval.</div></noscript>
-<div id="summary">
- <h1 id="project">{{S_PROJECT}}</h1><p class="sub" id="meta">{{S_META}}</p>
- <div id="verdict">{{S_VERDICT}}</div><div id="notices">{{S_NOTICES}}</div><div class="cards" id="cards">{{S_CARDS}}</div>
- <div id="scores">{{S_SCORES}}</div>
-</div>
+def _load_page():
+    """The page is three files in scripts/web/: page.html (the skeleton), page.css and page.js."""
+    folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
-<section id="findings-sec">
-<h2 data-i18n="findings"></h2>
-<div class="filters" id="filters">
- <label><input type="checkbox" data-sev="critical" checked> <span data-i18n="sev_critical"></span></label>
- <label><input type="checkbox" data-sev="high" checked> <span data-i18n="sev_high"></span></label>
- <label><input type="checkbox" data-sev="medium" checked> <span data-i18n="sev_medium"></span></label>
- <label><input type="checkbox" data-sev="low" checked> <span data-i18n="sev_low"></span></label>
- <label><input type="checkbox" data-sev="info" checked> <span data-i18n="sev_info"></span></label>
- <select id="source"></select>
- <input type="search" id="q" data-i18n-ph="search" size="26">
- <span class="muted" id="count"></span>
-</div>
-<div class="tablewrap"><table id="findings"><thead><tr>
- <th data-k="severity" data-i18n="th_severity"></th><th data-k="id" data-i18n="th_id"></th><th data-k="source" data-i18n="th_tool"></th>
- <th data-k="rule" data-i18n="th_what"></th><th data-k="file" data-i18n="th_where"></th></tr></thead><tbody>{{S_FINDINGS}}</tbody></table></div>
-<div class="empty" id="none" hidden data-i18n="no_match"></div>
-<p class="muted" data-i18n="findings_note"></p>
-</section>
+    def part(name):
+        with open(os.path.join(folder, name), encoding="utf-8") as f:
+            return f.read()
+    return part("page.html").replace("{{CSS}}", part("page.css")).replace("{{JS}}", part("page.js"))
 
-<section id="fixes-sec">
-<h2 data-i18n="fixes"></h2>
-<p class="muted" data-i18n="fixes_intro"></p>
-<div id="fixlist">{{S_FIXES}}</div>
-<p class="muted" id="serverhint" hidden></p>
-</section>
 
-<section id="progress-sec" hidden>
-<h2 data-i18n="progress"></h2>
-<p><span class="badge" id="state"></span> <span class="muted" id="reportready"></span></p>
-<pre class="source" id="log"></pre>
-</section>
-
-<section id="checklist-sec"{{S_CHECK_HIDDEN}}>
-<h2 data-i18n="checklist"></h2>
-<div class="tablewrap"><table id="checklist"><thead><tr><th data-i18n="th_n"></th><th data-i18n="th_item"></th><th data-i18n="th_mark"></th><th data-i18n="th_by"></th><th data-i18n="th_evidence"></th></tr></thead><tbody>{{S_CHECKLIST}}</tbody></table></div>
-</section>
-
-<section id="coverage-sec">
-<h2 data-i18n="coverage"></h2>
-<div class="tablewrap"><table id="coverage"><thead><tr><th data-i18n="th_check"></th><th data-i18n="th_result"></th><th data-i18n="th_feeds"></th></tr></thead><tbody>{{S_COVERAGE}}</tbody></table></div>
-</section>
-
-<section id="report-sec">
-<h2 data-i18n="report"></h2>
-<div class="notice" id="report-note" hidden><span id="report-note-text"></span> <button type="button" id="translate-btn" hidden data-i18n="translate_btn"></button></div>
-<div class="seg" id="seg"><button type="button" data-view="formatted" class="on" data-i18n="formatted"></button><button type="button" data-view="source" data-i18n="source"></button></div>
-<div class="report" id="report-formatted">{{S_REPORT}}</div>
-<pre class="source" id="report-source" hidden></pre>
-<div class="empty" id="no-report"{{S_NOREPORT_HIDDEN}} data-i18n="no_report"></div>
-</section>
-</main>
-
-<div class="sendbar" id="sendbar" hidden><div class="sendin">
- <strong><span id="selcount">0</span> <span data-i18n="selected"></span></strong>
- <span style="display:flex;gap:8px;flex-wrap:wrap">
-  <button type="button" id="selall" data-i18n="select_all"></button><button type="button" id="clearsel" data-i18n="clear"></button>
-  <button type="button" id="dl" data-i18n="download"></button><button type="button" id="copy" data-i18n="copy"></button><button type="button" id="fixbtn" class="primary" data-i18n="fix_btn" hidden></button>
- </span><span class="muted" id="copied" aria-live="polite"></span>
-</div></div>
-
-<!--AUDIT_SERVER-->
-<script type="application/json" id="data">{{DATA}}</script>
-<script>
-(function(){
- var D=JSON.parse(document.getElementById('data').textContent), root=document.documentElement;
- var KEY='audit-ui:'+D.project+':'+D.run;
- function load(k,d){try{var v=localStorage.getItem(k);return v===null?d:v}catch(e){return d}}
- function save(k,v){try{localStorage.setItem(k,v)}catch(e){}}
- var lang=load('audit-ui:lang',(navigator.language||'en').slice(0,2)==='fr'?'fr':'en'); if(!D.i18n[lang])lang='en';
- var theme=load('audit-ui:theme','auto');
- function t(k,v){var s=(D.i18n[lang]&&D.i18n[lang][k])||D.i18n.en[k]||k;if(v)Object.keys(v).forEach(function(x){s=s.replace('{'+x+'}',v[x])});return s}
- function L(o){if(o==null)return '';if(typeof o==='string')return o;return o[lang]||o.en||o.fr||''}
- function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
- function dark(){return theme==='dark'||(theme==='auto'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)}
- function applyTheme(){root.setAttribute('data-theme',theme==='auto'?'auto':theme);
-  document.getElementById('theme').textContent=dark()?t('theme_light'):t('theme_dark')}
-
- // ---- fixes state
- var picked={},notes={};
- try{var st=JSON.parse(load(KEY+':fixes','{}'));picked=st.picked||{};notes=st.notes||{}}catch(e){}
- function saveFixes(){save(KEY+':fixes',JSON.stringify({picked:picked,notes:notes}))}
-
- var order={critical:0,high:1,medium:2,low:3,info:4}, sortKey='severity', sortDir=1;
-
- function renderStatic(){
-  root.lang=lang;
-  document.querySelectorAll('[data-i18n]').forEach(function(n){n.textContent=t(n.dataset.i18n)});
-  document.querySelectorAll('[data-i18n-ph]').forEach(function(n){n.placeholder=t(n.dataset.i18nPh)});
-  document.getElementById('lang').textContent=t('lang_btn');
-  applyTheme();
-  document.getElementById('project').textContent=D.project;
-  document.getElementById('meta').textContent=t('meta_line',D.meta);
-  var v=document.getElementById('verdict');v.textContent='';
-  var vk=D.verdict||'none', box=el('div','verdict v-'+vk), b=el('span',null,t('verdict_'+vk));box.appendChild(b);
-  box.appendChild(document.createTextNode(D.verdict?t('mode_line',{n:D.level,mode:t(D.mode||'full')}):t('verdict_none_hint')));v.appendChild(box);
-  var nb=document.getElementById('notices');nb.textContent='';
-  D.notices.forEach(function(n){nb.appendChild(el('div','notice',(n.n!=null?n.n+' ':'')+t(n.key)))});
-  var counts={};D.findings.forEach(function(f){counts[f.severity]=(counts[f.severity]||0)+1});
-  var cards=document.getElementById('cards');cards.textContent='';
-  ['critical','high','medium','low','info'].forEach(function(s){var c=el('div','card s-'+s);c.appendChild(el('b',null,String(counts[s]||0)));c.appendChild(el('span',null,t('sev_'+s)));cards.appendChild(c)});
-  var ran=D.manifest.filter(function(m){return m.cls==='ok'||m.cls==='find'}).length, c2=el('div','card');
-  c2.appendChild(el('b',null,ran+' / '+D.manifest.length));c2.appendChild(el('span',null,t('checks_ran')));cards.appendChild(c2);
-  var sc=document.getElementById('scores');sc.textContent='';
-  var names=Object.keys(D.scores);
-  if(names.length){var sec=el('section');sec.appendChild(el('h2',null,t('scores')));var bars=el('div','bars');
-   names.forEach(function(k){var val=D.scores[k],row=el('div','bar');row.appendChild(el('b',null,t('dim_'+k)));
-    if(val==null){row.appendChild(el('span'));row.appendChild(el('i',null,t('not_assessed')))}
-    else{var tr=el('div','track'),f=el('div','fill');f.style.width=Math.max(0,Math.min(100,val))+'%';tr.appendChild(f);row.appendChild(tr);
-     row.appendChild(el('i',null,val+(D.confidence[k]?' ('+D.confidence[k]+')':'')))}
-    bars.appendChild(row)});sec.appendChild(bars);sc.appendChild(sec)}
-  // filters
-  var sel=document.getElementById('source'),cur=sel.value;sel.textContent='';
-  var o=el('option',null,t('all_tools'));o.value='';sel.appendChild(o);
-  Array.from(new Set(D.findings.map(function(f){return f.source}))).sort().forEach(function(s){var op=el('option',null,s);op.value=s;sel.appendChild(op)});sel.value=cur;
-  // coverage
-  var cb=document.querySelector('#coverage tbody');cb.textContent='';
-  D.manifest.forEach(function(m){var tr=el('tr','c-'+m.cls);tr.appendChild(el('td',null,m.tool));tr.appendChild(el('td',null,L(m.status_i18n)));tr.appendChild(el('td',null,L(m.dim_i18n)));cb.appendChild(tr)});
-  // checklist
-  var ck=document.getElementById('checklist-sec');ck.hidden=!D.checklist.length;
-  var kb=document.querySelector('#checklist tbody');kb.textContent='';
-  D.checklist.forEach(function(r){var tr=el('tr');[String(r.n),L(r.item),r.mark,r.by,L(r.evidence)].forEach(function(x){tr.appendChild(el('td',null,x))});kb.appendChild(tr)});
-  // report
-  var rf=document.getElementById('report-formatted'),rs=document.getElementById('report-source'),nr=document.getElementById('no-report');
-  var rep=D.reports[lang]||D.reports[D.primary]||D.reports.en||D.reports.fr, has=!!rep, note=document.getElementById('report-note');
-  nr.hidden=has;document.getElementById('seg').hidden=!has;
-  rf.innerHTML=has?rep.html:'';   // built and escaped by the generator (no raw HTML from the report passes through)
-  rs.textContent=has?rep.source:'';
-  var missing=has&&!D.reports[lang];note.hidden=!missing;
-  if(missing){document.getElementById('report-note-text').textContent=t('not_translated');
-   var tb=document.getElementById('translate-btn');tb.hidden=!(window.AUDIT_SERVER&&window.AUDIT_SERVER.translate);
-   if(!window.AUDIT_SERVER)document.getElementById('report-note-text').textContent=t('not_translated')+' '+t('translate_hint')}
-  renderFindings();renderFixes();
- }
-
- function renderFindings(){
-  var body=document.querySelector('#findings tbody'),none=document.getElementById('none'),count=document.getElementById('count');
-  var on={};document.querySelectorAll('#filters input[data-sev]').forEach(function(c){on[c.dataset.sev]=c.checked});
-  var term=document.getElementById('q').value.toLowerCase(),s=document.getElementById('source').value;
-  var rows=D.findings.filter(function(f){return on[f.severity]&&(!s||f.source===s)&&(!term||(f.file+' '+f.rule+' '+f.id+' '+f.source).toLowerCase().indexOf(term)>=0)});
-  rows.sort(function(a,b){var x=sortKey==='severity'?order[a.severity]:String(a[sortKey]),y=sortKey==='severity'?order[b.severity]:String(b[sortKey]);return(x<y?-1:x>y?1:0)*sortDir});
-  body.textContent='';
-  rows.forEach(function(f){var tr=el('tr'),td=el('td'),p=el('span','pill p-'+f.severity,t('sev_'+f.severity));td.appendChild(p);tr.appendChild(td);
-   tr.appendChild(el('td',null,f.id));tr.appendChild(el('td',null,f.source));var wt=el('td',null,f.rule+(f.count>1?'  (x'+f.count+')':''));
-   if(f.desc){wt.appendChild(el('br'));wt.appendChild(el('small','muted',L(f.desc)))}tr.appendChild(wt);
-   tr.appendChild(el('td','file',f.file+(f.line!==''&&f.line!=null?':'+f.line:'')));body.appendChild(tr)});
-  count.textContent=rows.length+' '+t('of')+' '+D.findings.length+' '+t('shown');none.hidden=rows.length>0;
- }
-
- function renderFixes(){
-  var box=document.getElementById('fixlist');box.textContent='';
-  if(!D.fixes.length){box.appendChild(el('div','empty',D.fixes_error||t('fixes_none')))}
-  D.fixes.forEach(function(f){
-   var card=el('div','fix'+(picked[f.id]?' on':'')),h=el('h3',null,f.id+'  '+L(f.title));card.appendChild(h);
-   var meta=el('div','meta');
-   if(f.severity){meta.appendChild(el('span','pill p-'+f.severity,t('sev_'+f.severity)||f.severity))}
-   if(f.finding)meta.appendChild(el('span','badge',f.finding));
-   if(f.file)meta.appendChild(el('span','file',f.file));
-   meta.appendChild(el('span','badge',f.who==='you'?t('who_you'):t('who_claude')));
-   if(f.risk)meta.appendChild(el('span',null,t('risk')+': '+f.risk));
-   card.appendChild(meta);
-   [['why',f.why],['change',f.change],['verify',f.verify]].forEach(function(p){
-    var txt=L(p[1]);if(!txt)return;var d=el('details'),s=el('summary',null,t(p[0]));d.appendChild(s);
-    var body=p[0]==='change'?el('pre','source',txt):el('div',null,txt);d.appendChild(body);if(p[0]!=='verify')d.open=true;card.appendChild(d)});
-   var lab=el('label','ok'),cb=el('input');cb.type='checkbox';cb.checked=!!picked[f.id];
-   cb.addEventListener('change',function(){picked[f.id]=cb.checked;saveFixes();card.className='fix'+(cb.checked?' on':'');updateBar()});
-   lab.appendChild(cb);lab.appendChild(el('span',null,f.who==='you'?t('myself'):t('approve')));card.appendChild(lab);
-   var ta=el('textarea');ta.placeholder=t('note');ta.value=notes[f.id]||'';
-   ta.addEventListener('input',function(){notes[f.id]=ta.value;saveFixes()});card.appendChild(ta);
-   box.appendChild(card)});
-  updateBar();
- }
- function chosen(){return D.fixes.filter(function(f){return picked[f.id]})}
- function updateBar(){var n=chosen().length;document.getElementById('selcount').textContent=n;document.getElementById('sendbar').hidden=!D.fixes.length;
-  document.getElementById('copy').disabled=!n;document.getElementById('dl').disabled=!n}
- function message(){
-  var c=chosen();if(!c.length)return t('msg_none');
-  var mine=c.filter(function(f){return f.who==='you'}),todo=c.filter(function(f){return f.who!=='you'});
-  var L=[t('msg_head')+' audit/'+D.run+' ('+D.project+'):',''];
-  function line(f,i){var s=(i+1)+'. '+f.id+(f.finding?' ('+f.finding+')':'')+' - '+L(f.title)+(f.file?' ['+f.file+']':'');
-   if(notes[f.id]&&notes[f.id].trim())s+='\n   '+t('msg_note')+': '+notes[f.id].trim();return s}
-  todo.forEach(function(f,i){L.push(line(f,i))});
-  if(mine.length){L.push('','** '+t('msg_mine')+':');mine.forEach(function(f,i){L.push(line(f,i))})}
-  L.push('',t('msg_rules'),'',JSON.stringify({run:D.run,approved:todo.map(function(f){return{id:f.id,finding:f.finding||null,note:(notes[f.id]||'').trim()}}),
-   mine:mine.map(function(f){return f.id})}));
-  return L.join('\n');
- }
- function flash(msg){var c=document.getElementById('copied');c.textContent=msg;setTimeout(function(){c.textContent=''},3000)}
- document.getElementById('copy').addEventListener('click',function(){
-  var m=message();
-  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(m).then(function(){flash(t('copied'))},function(){fallback(m)})}else{fallback(m)}});
- function fallback(m){var ta=el('textarea');ta.value=m;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');flash(t('copied'))}catch(e){}document.body.removeChild(ta)}
- document.getElementById('dl').addEventListener('click',function(){
-  var c=chosen(),data={run:D.run,project:D.project,approved:c.filter(function(f){return f.who!=='you'}).map(function(f){return{id:f.id,finding:f.finding||null,title:L(f.title),note:(notes[f.id]||'').trim()}}),
-   mine:c.filter(function(f){return f.who==='you'}).map(function(f){return f.id})};
-  var a=el('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.download='approved-fixes.json';document.body.appendChild(a);a.click();document.body.removeChild(a)});
- document.getElementById('selall').addEventListener('click',function(){D.fixes.forEach(function(f){picked[f.id]=true});saveFixes();renderFixes()});
- document.getElementById('clearsel').addEventListener('click',function(){picked={};saveFixes();renderFixes()});
-
- document.getElementById('lang').addEventListener('click',function(){lang=lang==='en'?'fr':'en';save('audit-ui:lang',lang);renderStatic()});
- document.getElementById('theme').addEventListener('click',function(){theme=dark()?'light':'dark';save('audit-ui:theme',theme);applyTheme()});
- if(window.matchMedia)matchMedia('(prefers-color-scheme: dark)').addEventListener&&matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme);
- document.querySelectorAll('#filters input[data-sev]').forEach(function(c){c.addEventListener('change',renderFindings)});
- document.getElementById('q').addEventListener('input',renderFindings);document.getElementById('source').addEventListener('change',renderFindings);
- document.querySelectorAll('#findings th').forEach(function(th){th.addEventListener('click',function(){var k=th.dataset.k;if(sortKey===k)sortDir=-sortDir;else{sortKey=k;sortDir=1}renderFindings()})});
- document.querySelectorAll('#seg button').forEach(function(b){b.addEventListener('click',function(){
-  document.querySelectorAll('#seg button').forEach(function(x){x.classList.toggle('on',x===b)});
-  document.getElementById('report-formatted').hidden=b.dataset.view!=='formatted';document.getElementById('report-source').hidden=b.dataset.view!=='source'})});
- // ---- start Claude from this page (only when served by scan.sh --serve)
- var S=window.AUDIT_SERVER||null, timer=null;
- function api(path,opts){opts=opts||{};opts.headers={'X-Audit-Token':S.token,'Content-Type':'application/json'};
-  return fetch(path,opts).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})})}
- function claudeFixes(){return chosen().filter(function(f){return f.who!=='you'})}
- function showState(st){var b=document.getElementById('state');b.textContent=t('state_'+st.state);
-  document.getElementById('progress-sec').hidden=(st.state==='idle');
-  document.getElementById('log').textContent=st.log&&st.log.length?st.log.join('\n\n'):t('log_empty');
-  document.getElementById('reportready').textContent=st.report?t('report_ready',{run:D.run}):'';
-  document.getElementById('fixbtn').disabled=(st.state==='running')||!claudeFixes().length}
- function poll(){api('/api/status').then(function(r){if(r.ok){showState(r.j);if(r.j.state==='running'){clearTimeout(timer);timer=setTimeout(poll,2000)}}})}
- function initServer(){
-  var hint=document.getElementById('serverhint');
-  if(!S){hint.hidden=!D.fixes.length;hint.textContent=t('server_hint');return}
-  if(!S.fixable){hint.hidden=false;hint.textContent=S.reason;return}
-  hint.hidden=true;document.getElementById('fixbtn').hidden=false;poll()}
- document.getElementById('fixbtn').addEventListener('click',function(){
-  var c=claudeFixes();if(!c.length||!S)return;
-  if(!confirm(t('confirm_fix',{n:c.length})))return;
-  api('/api/start',{method:'POST',body:JSON.stringify({ids:c.map(function(f){return f.id}),notes:notes})}).then(function(r){
-   if(r.ok){flash(t('started'));poll()}else{flash(t('start_failed')+': '+(r.j&&r.j.error||''))}})});
- var _upd=updateBar;updateBar=function(){_upd();if(S&&S.fixable){document.getElementById('fixbtn').disabled=!claudeFixes().length}};
- function translateNow(){
-  if(!S)return;var b=document.getElementById('translate-btn');b.disabled=true;flash(t('translating'));
-  api('/api/translate',{method:'POST',body:JSON.stringify({})}).then(function(r){
-   if(!r.ok){b.disabled=false;flash(t('translate_failed')+': '+(r.j&&r.j.error||''));return}
-   (function wait(){api('/api/status').then(function(s){
-     if(s.j.state==='running'){setTimeout(wait,2000)}
-     else if(s.j.state==='done'){flash(t('translated'));setTimeout(function(){location.reload()},800)}
-     else{b.disabled=false;flash(t('translate_failed'))}})})()})}
- document.getElementById('translate-btn').addEventListener('click',translateNow);
- document.getElementById('tools').hidden=false;
- renderStatic();initServer();
-})();
-</script>
-</body>
-</html>
-"""
+PAGE = _load_page()
 
 
 def main(argv):

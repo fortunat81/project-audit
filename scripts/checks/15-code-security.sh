@@ -6,7 +6,7 @@ mod_tools() { echo semgrep; }
 
 mod_run() {
   DIM="security"
-  if ! has semgrep; then skip semgrep "not installed ($(install_hint semgrep))"; astro_security; return; fi
+  if ! has semgrep; then skip semgrep "not installed ($(install_hint semgrep))"; skip semgrep-coverage "semgrep not installed"; astro_security; return; fi
   note_version semgrep "$(semgrep --version 2>/dev/null | head -1)"
   # Semgrep exits 0 even when it finds things, so decide by the results list.
   run --json --empty '"results": *\[ *\]' semgrep semgrep.json \

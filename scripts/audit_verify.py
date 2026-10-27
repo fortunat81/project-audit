@@ -220,52 +220,63 @@ def check_secrets(r, report_path, scores_path):
         r.ok("no secret-looking text in the report")
 
 
-def check_fixes(r, folder):
-    """fixes.json (proposed fixes the web page lets the user approve) must be well formed."""
+def _check_one_fix(r, x, i, known, seen):
+    """Checks one entry of fixes.json; returns how many problems it found."""
+    title_ok = isinstance(x, dict) and isinstance(x.get("title"), (str, dict)) and bool(x.get("title"))
+    if not isinstance(x, dict) or not title_ok or not all(isinstance(x.get(k), str) and x.get(k) for k in ("id", "who")):
+        r.fail("fix %d in fixes.json needs id, title and who (text)" % i)
+        return 1
+    problems = 0
+    if x["who"] not in ("claude", "you"):
+        r.fail("fix %s: who must be 'claude' or 'you'" % x["id"])
+        problems += 1
+    if x["id"] in seen:
+        r.fail("fix id %s is used twice" % x["id"])
+        problems += 1
+    seen.add(x["id"])
+    finding = x.get("finding")
+    if finding and not finding.startswith("C-") and known and finding not in known:
+        r.fail("fix %s points at finding %s, which is not in findings.tsv (use the stable ID, or C-001 for a Claude-only finding)" % (x["id"], finding))
+        problems += 1
+    if x["who"] == "claude" and not (x.get("change") and x.get("verify")):
+        r.warn("fix %s has no 'change' or no 'verify' text; Claude will have little to go on" % x["id"])
+    for key in audit_translate.TEXT_FIELDS:
+        v = x.get(key)
+        if isinstance(v, dict) and v and set(v) & set(audit_translate.LANGS) != set(audit_translate.LANGS):
+            r.warn("fix %s: '%s' is available in only one language" % (x["id"], key))
+    if SECRET_SHAPES.search(json.dumps(x)):
+        r.fail("fix %s contains text shaped like a secret" % x["id"])
+        problems += 1
+    return problems
+
+
+def _read_fixes_list(r, folder):
+    """The list in fixes.json, or None after reporting why it cannot be used."""
     text = read(os.path.join(folder, "fixes.json"))
     if text is None:
         r.warn("no fixes.json: the web page cannot offer the proposed fixes for approval")
-        return
+        return None
     try:
         data = json.loads(text)
     except ValueError:
         r.fail("fixes.json is not valid JSON")
-        return
+        return None
     fixes = data.get("fixes") if isinstance(data, dict) else data
     if not isinstance(fixes, list) or not fixes:
         r.fail('fixes.json must be a list of fixes (or {"fixes": [...]})')
+        return None
+    return fixes
+
+
+def check_fixes(r, folder):
+    """fixes.json (proposed fixes the web page lets the user approve) must be well formed."""
+    fixes = _read_fixes_list(r, folder)
+    if fixes is None:
         return
-    known = set()
     findings = read(os.path.join(folder, "findings.tsv")) or ""
-    for line in findings.splitlines()[1:]:
-        known.add(line.split("	")[0])
-    problems, seen = 0, set()
-    for i, x in enumerate(fixes, 1):
-        title_ok = isinstance(x, dict) and isinstance(x.get("title"), (str, dict)) and bool(x.get("title"))
-        if not isinstance(x, dict) or not title_ok or not all(isinstance(x.get(k), str) and x.get(k) for k in ("id", "who")):
-            r.fail("fix %d in fixes.json needs id, title and who (text)" % i)
-            problems += 1
-            continue
-        if x["who"] not in ("claude", "you"):
-            r.fail("fix %s: who must be 'claude' or 'you'" % x["id"])
-            problems += 1
-        if x["id"] in seen:
-            r.fail("fix id %s is used twice" % x["id"])
-            problems += 1
-        seen.add(x["id"])
-        finding = x.get("finding")
-        if finding and not finding.startswith("C-") and known and finding not in known:
-            r.fail("fix %s points at finding %s, which is not in findings.tsv (use the stable ID, or C-001 for a Claude-only finding)" % (x["id"], finding))
-            problems += 1
-        if x["who"] == "claude" and not (x.get("change") and x.get("verify")):
-            r.warn("fix %s has no 'change' or no 'verify' text; Claude will have little to go on" % x["id"])
-        for key in audit_translate.TEXT_FIELDS:
-            v = x.get(key)
-            if isinstance(v, dict) and v and set(v) & set(audit_translate.LANGS) != set(audit_translate.LANGS):
-                r.warn("fix %s: '%s' is available in only one language" % (x["id"], key))
-        if SECRET_SHAPES.search(json.dumps(x)):
-            r.fail("fix %s contains text shaped like a secret" % x["id"])
-            problems += 1
+    known = {line.split("\t")[0] for line in findings.splitlines()[1:]}
+    seen = set()
+    problems = sum(_check_one_fix(r, x, i, known, seen) for i, x in enumerate(fixes, 1))
     if not problems:
         r.ok("fixes.json is well formed (%d fixes)" % len(fixes))
 

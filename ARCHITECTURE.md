@@ -33,7 +33,8 @@ scan.sh  ->  audit/<run>/        ->  Claude (SKILL.md)       ->  AUDIT.md, score
 | `scripts/audit_digest.py` | Findings digest with stable IDs |
 | `scripts/audit_verdict.py` | The verdict rules (importable and a command) |
 | `scripts/audit_verify.py`, `verify-report.sh` | Report consistency check |
-| `scripts/audit_report_html.py` | The web page (one self-contained file; its CSS and JavaScript are inside `PAGE`) |
+| `scripts/audit_report_html.py` | Builds the web page from the run folder (one self-contained `report.html`) |
+| `scripts/web/page.html`, `page.css`, `page.js` | The page's skeleton, styles and script (kept as separate files so they can be checked on their own) |
 | `scripts/audit_i18n.py` | English/French tables: the 43 checklist items, finding-rule descriptions, check statuses |
 | `scripts/audit_translate.py`, `audit_claude.py` | Asks Claude Code (print mode) for the other language; shared launcher |
 | `scripts/audit_serve.py` | Local server (127.0.0.1) behind `scan.sh --serve`: starts Claude on approved fixes or a translation |

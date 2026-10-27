@@ -247,30 +247,33 @@ def make_handler(ctx, session):
             except (ValueError, AttributeError):
                 return None
 
-        def do_POST(self):
-            path = self.path.split("?")[0]
-            if path not in ("/api/start", "/api/translate"):
-                self._send(404, '{"error":"not found"}')
-                return
-            if not self._guard(True):
-                return
-            body = self._read_body()
-            if not isinstance(body, dict):
-                self._send(400, '{"error":"bad request"}')
-                return
-            if path == "/api/translate":
-                with session.lock:
-                    if session.state() == "running":
-                        self._send(409, '{"error":"a Claude run is already in progress"}')
-                        return
-                    try:
-                        session.start_translation()
-                    except (RuntimeError, OSError) as exc:
-                        self._send(409 if str(exc).startswith("Nothing") else 500, json.dumps({"error": str(exc)}))
-                        return
-                self._send(200, json.dumps({"started": True, "kind": "translate"}))
-                return
+        def _translate(self):
+            with session.lock:
+                if session.state() == "running":
+                    self._send(409, '{"error":"a Claude run is already in progress"}')
+                    return
+                try:
+                    session.start_translation()
+                except (RuntimeError, OSError) as exc:
+                    self._send(409 if str(exc).startswith("Nothing") else 500, json.dumps({"error": str(exc)}))
+                    return
+            self._send(200, json.dumps({"started": True, "kind": "translate"}))
 
+        def _chosen_fixes(self, ids):
+            """The fixes to apply, or None after sending the error. Only fixes Claude can do, from fixes.json."""
+            chosen = []
+            for i in ids:
+                f = ctx.fixes.get(i)
+                if f is None or f.get("who") == "you":
+                    self._send(400, json.dumps({"error": "unknown or not-for-Claude fix: %s" % i[:40]}))
+                    return None
+                chosen.append(f)
+            if not chosen:
+                self._send(400, '{"error":"nothing selected"}')
+                return None
+            return chosen
+
+        def _start_fixes(self, body):
             ctx.refresh_fixes()
             if ctx.blocked:
                 self._send(409, json.dumps({"error": ctx.blocked}))
@@ -281,15 +284,8 @@ def make_handler(ctx, session):
             except AttributeError:
                 self._send(400, '{"error":"bad request"}')
                 return
-            chosen = []
-            for i in ids:
-                f = ctx.fixes.get(i)
-                if f is None or f.get("who") == "you":
-                    self._send(400, json.dumps({"error": "unknown or not-for-Claude fix: %s" % i[:40]}))
-                    return
-                chosen.append(f)
-            if not chosen:
-                self._send(400, '{"error":"nothing selected"}')
+            chosen = self._chosen_fixes(ids)
+            if chosen is None:
                 return
             with session.lock:
                 if session.state() == "running":
@@ -302,6 +298,22 @@ def make_handler(ctx, session):
                     self._send(500, json.dumps({"error": str(exc)}))
                     return
             self._send(200, json.dumps({"started": True, "ids": session.ids}))
+
+        def do_POST(self):
+            path = self.path.split("?")[0]
+            if path not in ("/api/start", "/api/translate"):
+                self._send(404, '{"error":"not found"}')
+                return
+            if not self._guard(True):
+                return
+            body = self._read_body()
+            if not isinstance(body, dict):
+                self._send(400, '{"error":"bad request"}')
+                return
+            if path == "/api/translate":
+                self._translate()
+            else:
+                self._start_fixes(body)
 
     return Handler, last_seen
 

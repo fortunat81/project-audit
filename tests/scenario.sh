@@ -86,13 +86,13 @@ run_scenario() {
     fi
     if [ -z "$row" ]; then bad "$label" "no row in the manifest (module didn't run)"; continue; fi
     case "$status" in
-      "skipped: not installed"*|"skipped: npx not found"*|"skipped: Flutter SDK not found"*|"skipped: Dart SDK not found"*|"skipped: npm not found"*)
+      "skipped: not installed"*|"skipped: "*" not installed"*|"skipped: npx not found"*|"skipped: Flutter SDK not found"*|"skipped: Dart SDK not found"*|"skipped: npm not found"*)
         case "$want" in ^skipped*) ;; *) skip "$label (tool not installed here)"; continue ;; esac ;;
     esac
 
     if [ "$want" = "ran" ]; then re='^(clean|findings|done|partial)'; else re="$want"; fi
     if ! printf '%s' "$status" | grep -Eq "$re"; then
-      bad "$label" "status was: $status  (log: $WORK/$name.log)"; continue
+      bad "$label" "status was: $status  (log: $WORK/$name.log) $(head -c 300 "$OUT/$file.err" 2>/dev/null | tr '\n' ' ')"; continue
     fi
     f="$OUT/$file"
     if [ -n "${contains:-}" ] && [ "$contains" != "-" ]; then

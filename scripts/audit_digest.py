@@ -76,7 +76,7 @@ class Collector:
         if have:
             have["count"] += 1
             return
-        fid = "F-" + hashlib.sha1("|".join(key).encode("utf-8")).hexdigest()[:6]
+        fid = "F-" + hashlib.sha1("|".join(key).encode("utf-8")).hexdigest()[:6]  # nosemgrep: only a short stable label for a finding, not a security use
         self.found[key] = {"id": fid, "source": source, "severity": sev, "rule": rule,
                            "file": file, "line": line if line is not None else "", "count": 1}
 
