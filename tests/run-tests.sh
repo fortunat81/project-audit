@@ -80,7 +80,12 @@ fi
 START="$(date +%s)"
 export AUDIT_TEST_WORK="$WORK"
 # shellcheck disable=SC2086
-printf '%s\n' $LIST | xargs -P "$JOBS" -I{} bash -c 'bash "$0" --one "$1" > "$2/results/$1.txt" 2>&1' "$HERE/run-tests.sh" {} "$WORK"
+# Each one runs under a time limit (TEST_TIMEOUT seconds, default 300), so a hung test fails with a clear
+# message instead of blocking the run. The ">>>" lines show live which ones started and finished.
+. "$REPO/scripts/find-python.sh"
+find_python || { echo "The tests need Python 3.8 or newer (none found)."; exit 1; }
+export AUDIT_TEST_PY="$PYTHON"
+printf '%s\n' $LIST | xargs -P "$JOBS" -I{} bash -c 'echo ">>> start $1" >&2; PYTHONUTF8=1 $AUDIT_TEST_PY "$3/with_timeout.py" "${TEST_TIMEOUT:-300}" "$2/results/$1.txt" bash "$3/run-tests.sh" --one "$1"; echo ">>> done $1 (exit $?)" >&2' _ {} "$WORK" "$HERE"
 
 for n in $LIST; do
   echo
