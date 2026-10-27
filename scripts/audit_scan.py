@@ -47,6 +47,7 @@ sys.path.insert(0, HERE)
 import audit_core  # noqa: E402
 import audit_detect  # noqa: E402
 import audit_modes  # noqa: E402
+import audit_progress  # noqa: E402
 from audit_checks import load_modules  # noqa: E402
 from audit_core import Ctx, posix, read_text  # noqa: E402
 
@@ -257,6 +258,9 @@ def scan(ctx):
     ctx.out = _new_run_folder(audit_dir)
     ctx.write("manifest.tsv", "tool\tstatus\texit\toutput\tdimension\n")
     ctx.write("versions.txt", "")
+    audit_progress.write(ctx.out, "scanning")
+    if os.environ.get("AUDIT_OPEN") == "1" and not os.environ.get("AUDIT_SUB"):
+        open_file(os.path.join(ctx.out, "progress.html"))   # the page follows the scan and becomes the report
     write_meta(ctx)
     _record_trust_and_subprojects(ctx)
     _run_modules(ctx)
@@ -265,6 +269,7 @@ def scan(ctx):
         f.write(posix(ctx.out) + "\n")
     _write_digest_and_page(ctx.out)
     coverage(ctx)
+    audit_progress.write(ctx.out, "review")
     print()
     print("Profile: %s" % " ".join(ctx.traits))
     print("Done. Results saved in: %s" % posix(ctx.out))
@@ -313,6 +318,21 @@ def run_all(ctx, rest):
     return 0
 
 
+def open_file(page):
+    """Opens a file in the user's browser, or says where it is when there is no way to open it."""
+    try:
+        if audit_core.is_windows():
+            os.startfile(page)  # type: ignore[attr-defined]
+            return
+        opener = "open" if sys.platform == "darwin" else "xdg-open"
+        if shutil.which(opener):
+            subprocess.call([opener, page])
+            return
+    except OSError:
+        pass
+    print("Open this file in a browser: %s" % page)
+
+
 def delegate(mode, rest):
     """Modes that live in their own scripts."""
     run_dir = rest[0] if rest else ""
@@ -339,15 +359,7 @@ def delegate(mode, rest):
     if audit_report_html.main(["audit_report_html", run_dir]):
         return 1
     if mode == "--open":
-        page = os.path.join(run_dir, "report.html")
-        if audit_core.is_windows():
-            os.startfile(page)  # type: ignore[attr-defined]
-        else:
-            opener = "open" if sys.platform == "darwin" else "xdg-open"
-            if shutil.which(opener):
-                subprocess.call([opener, page])
-            else:
-                print("Open this file in a browser: %s" % page)
+        open_file(os.path.join(run_dir, "report.html"))
     return 0
 
 

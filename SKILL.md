@@ -98,10 +98,12 @@ Any of the first three answers in question 3 forces full mode. The second also l
 ## Step 2: Run the scanners and wait (tools only)
 
 ```bash
-bash <skill-dir>/scripts/scan.sh
+AUDIT_OPEN=1 bash <skill-dir>/scripts/scan.sh
 # with a live site for this run only:
-AUDIT_URL=https://example.com bash <skill-dir>/scripts/scan.sh
+AUDIT_OPEN=1 AUDIT_URL=https://example.com bash <skill-dir>/scripts/scan.sh
 ```
+
+`AUDIT_OPEN=1` opens `progress.html` in the user's browser at the start: it lists the checks as they finish, then says Claude is writing the report, and switches to the full report by itself once Step 6 runs `--report-html`. Leave `AUDIT_OPEN=1` out in a scheduled or unattended run. Tell the user in one line that the page is open and will follow along.
 
 Wait for it to finish. If it prints `WARNING: this copy of the audit tool ...` (the copy has no git history, or is behind GitHub), say so first, at the top of the report and in your reply: an old copy runs silently and gives weaker audits, so the user should update it before relying on the result. It prints the profile, a status table, a `COVERAGE:` line, an `INCOMPLETE:` list of checks that didn't run fully, and `NO DEDICATED CHECKS for:` any unhandled languages. Results go to `audit/<date_time>/` (each run its own folder): `manifest.tsv` (tool, status, exit, output file, dimension), `meta.txt` (profile, commit, modules run), `versions.txt` (tool versions), `coverage.txt`, and each tool's output. Two more files make the next steps cheaper and safer: `digest.txt` (counts, the critical and high findings with stable IDs, files flagged by more than one tool, what was not covered; no secret values) and `findings.tsv` (the same findings, one per line). Read the digest first and open raw outputs only for the items you verify. `meta.txt` also records the starting and ending fingerprint of the project (`consistent=yes|no`), the methodology commit, a hash of the scanner settings, and whether untrusted mode was on. If the manifest has a `consistency` row (the project changed while the scan ran), say so at the top of the report and offer to scan again.
 

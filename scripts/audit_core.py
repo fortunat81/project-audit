@@ -20,6 +20,8 @@ import subprocess
 import sys
 import time
 
+import audit_progress
+
 TIMEOUT_SECONDS = 300
 
 # Tools fetched with npx are pinned so results don't change between audits just because a new version
@@ -267,6 +269,7 @@ class Ctx:
 
     def record(self, name, status, code, output):
         self.append("manifest.tsv", "%s\t%s\t%s\t%s\t%s\n" % (name, status, code, output, self.dim))
+        audit_progress.write(self.out, "scanning")
 
     def drop_last_record(self):
         """Removes the last manifest row (used when a tool is run again after a crash)."""

@@ -17,6 +17,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import audit_progress  # noqa: E402
 import audit_digest    # noqa: E402
 import audit_verdict   # noqa: E402
 import audit_i18n      # noqa: E402
@@ -508,6 +509,8 @@ def main(argv):
     page = build(argv[1])
     with open(os.path.join(argv[1], "report.html"), "w", encoding="utf-8", newline="\n") as f:
         f.write(page)
+    if os.path.isfile(os.path.join(argv[1], "AUDIT.md")):
+        audit_progress.write(argv[1], "done")   # an open progress tab moves on to the full report
     print("report: %s" % os.path.join(argv[1], "report.html"))
     return 0
 
