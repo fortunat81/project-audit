@@ -36,6 +36,7 @@ Standard library only (Python 3.8+).
 import contextlib
 import io
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -318,9 +319,48 @@ def run_all(ctx, rest):
     return 0
 
 
+BROWSER_NAMES = ["msedge", "chrome", "google-chrome", "chromium", "chromium-browser", "brave"]
+
+
+def find_browser(names):
+    """The first Chrome-family browser found on PATH or in its usual install folder, or None."""
+    places = []
+    if audit_core.is_windows():
+        for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"), os.environ.get("LOCALAPPDATA")):
+            if base:
+                places += [os.path.join(base, "Microsoft", "Edge", "Application", "msedge.exe"),
+                           os.path.join(base, "Google", "Chrome", "Application", "chrome.exe")]
+    elif sys.platform == "darwin":
+        places += ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                   "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                   "/Applications/Chromium.app/Contents/MacOS/Chromium"]
+    for name in names:
+        found = shutil.which(name)
+        if found:
+            return found
+    for p in places:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def app_window_command(page, finder=find_browser):
+    """The command that opens the page in its own app-style window (no tabs, no address bar), like an installed web
+    app. Chrome, Edge and other Chromium browsers support it. Empty when none is installed."""
+    browser = finder(BROWSER_NAMES)
+    if not browser:
+        return []
+    return [browser, "--app=" + pathlib.Path(os.path.abspath(page)).as_uri(), "--window-size=1100,800"]
+
+
 def open_file(page):
-    """Opens a file in the user's browser, or says where it is when there is no way to open it."""
+    """Opens a file in its own browser window like a web app (Chrome or Edge), else in the default browser, or says
+    where it is when there is no way to open it."""
     try:
+        cmd = app_window_command(page)
+        if cmd:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
         if audit_core.is_windows():
             os.startfile(page)  # type: ignore[attr-defined]
             return

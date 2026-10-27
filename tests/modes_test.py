@@ -133,6 +133,15 @@ def main():
     say(same(audit_scan.find_run_dir([folder], sub), folder), "an explicit folder wins")
     say(audit_scan.find_run_dir([], tempfile.mkdtemp()) == "", "nothing found: empty")
 
+    # the report opens in its own app-style window (no tabs, no address bar) when Chrome or Edge is there
+    page = os.path.join(root, "report.html")
+    cmd = audit_scan.app_window_command(page, lambda names: "/bin/" + names[0])
+    say(bool(cmd) and cmd[0].endswith(audit_scan.BROWSER_NAMES[0]) and any(a.startswith("--app=file:") for a in cmd),
+        "with a Chromium browser the page opens as an app window", cmd)
+    say(audit_scan.app_window_command(page, lambda names: None) == [], "no Chromium browser: no app command, the default opener is used")
+    cmd = audit_scan.app_window_command(page, lambda names: "/bin/" + names[-1])
+    say(bool(cmd) and cmd[0].endswith(audit_scan.BROWSER_NAMES[-1]), "the first browser found in the list is used")
+
 
 if __name__ == "__main__":
     main()
