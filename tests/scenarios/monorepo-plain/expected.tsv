@@ -1,0 +1,4 @@
+# Without --all, project folders the scan did not cover must show up as a gap.
+@not-traits	python node
+subprojects	partial.*backend.*web	-	-
+osv-scanner	absent	-	-

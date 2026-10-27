@@ -71,7 +71,7 @@ for name in $SCENARIOS; do
     git config commit.gpgsign false
     git add -A && git commit -qm "initial" --allow-empty
     [ -f "$src/setup.sh" ] && bash "$src/setup.sh"
-    AUDIT_NO_FETCH=1 bash "$SCAN" > "$WORK/$name.log" 2>&1
+    AUDIT_NO_FETCH=1 bash "$SCAN" $(cat "$src/scan-args" 2>/dev/null) > "$WORK/$name.log" 2>&1
   )
   if [ ! -f "$dest/audit/latest.txt" ]; then
     bad "scan ran" "no results folder; see $WORK/$name.log"; continue
@@ -91,6 +91,10 @@ for name in $SCENARIOS; do
         for t in $want; do
           case "$TRAITS" in *" $t "*) bad "trait $t NOT detected" "traits were:$TRAITS" ;; *) ok "trait $t not detected" ;; esac
         done; continue ;;
+      @file)       # a file the scan must have created, inside the test project
+        for t in $want; do if [ -e "$dest/$t" ]; then ok "file exists: $t"; else bad "file exists: $t" "not found in the test project"; fi; done; continue ;;
+      @no-file)    # a file that must NOT exist (for example a marker the project would write if the scan ran its code)
+        for t in $want; do if [ -e "$dest/$t" ]; then bad "file absent: $t" "the scan ran code from the project"; else ok "file absent: $t"; fi; done; continue ;;
       @coverage)
         if grep -Eq "$want" "$OUT/coverage.txt"; then ok "coverage note: $want"; else bad "coverage note: $want" "$(tr '\n' ' ' < "$OUT/coverage.txt")"; fi
         continue ;;

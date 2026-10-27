@@ -6,6 +6,7 @@
 # Usage (run from the project root):
 #   bash scan.sh                  run the scan
 #   bash scan.sh --detect         show what was detected and which modules apply (changes nothing)
+#   bash scan.sh --all            scan this folder and every project folder in it, each with its own checks
 #   bash scan.sh --projects       list project folders (this one and any in subfolders); audit each (changes nothing)
 #   bash scan.sh --verify-report  check the finished AUDIT.md and scores.json for mistakes (changes nothing)
 #   bash scan.sh --check          list missing tools and how to install them (changes nothing)
@@ -310,6 +311,34 @@ if [ "${1:-}" = "--projects" ]; then
   exit 0
 fi
 
+# --- All-projects mode -------------------------------------------------------
+#   bash scan.sh --all     scan this folder (secrets, history and every other general check cover the
+#                          whole tree) and then every project folder from --projects, each in its own
+#                          audit/ folder, so each one's stack is detected and gets its own checks.
+if [ "${1:-}" = "--all" ]; then
+  shift
+  ALL_SUMMARY="$ROOT/audit/all-latest.txt"
+  mkdir -p "$ROOT/audit"; : > "$ALL_SUMMARY"
+  echo "##### . (whole folder)"
+  AUDIT_ALL=1 bash "$SCRIPT_DIR/scan.sh" "$@"
+  for d in $SUBPROJECTS; do
+    echo; echo "##### $d"
+    (cd "$ROOT/$d" && AUDIT_ALL=1 AUDIT_SUB=1 bash "$SCRIPT_DIR/scan.sh" "$@")
+  done
+  {
+    printf "folder\tfindings\tpartial\tfailed\tskipped\ttraits\n"
+    for d in . $SUBPROJECTS; do
+      latest="$ROOT/$d/audit/latest.txt"; [ -f "$latest" ] || continue
+      m="$(cat "$latest")/manifest.tsv"
+      awk -F'\t' -v d="$d" -v tr="$(grep '^traits=' "$(cat "$latest")/meta.txt" | cut -d= -f2-)" \
+        'NR>1 { if ($2=="findings") f++; else if ($2 ~ /^partial/) p++; else if ($2 ~ /^failed-to-run/ || $2=="timeout") x++; else if ($2 ~ /^skipped|^unavailable/) s++ }
+         END { printf "%s\t%d\t%d\t%d\t%d\t%s\n", d, f, p, x, s, tr }' "$m"
+    done
+  } | tee "$ALL_SUMMARY"
+  echo "Combined summary saved in: $ALL_SUMMARY"
+  exit 0
+fi
+
 if [ "${1:-}" = "--verify-report" ]; then
   shift; exec bash "$SCRIPT_DIR/verify-report.sh" "$@"   # checks AUDIT.md and scores.json; changes nothing
 fi
@@ -605,7 +634,12 @@ result() {
 }
 
 # Project folders this run does not cover must show up as a gap, not vanish silently
-if [ -n "$SUBPROJECTS" ]; then
+if [ -n "$SUBPROJECTS" ] && [ "${AUDIT_ALL:-0}" = 1 ] && [ "$ROOT" = "$(pwd)" ] && [ -z "${AUDIT_SUB:-}" ]; then
+  DIM="general"
+  echo "==> subprojects (scanned separately by --all)"
+  record subprojects "done: each project folder was scanned separately by --all: $SUBPROJECTS" "-" "-"
+  echo "subprojects=$SUBPROJECTS" >> "$OUT/meta.txt"
+elif [ -n "$SUBPROJECTS" ]; then
   DIM="general"
   echo "==> subprojects (partial: not scanned)"
   record subprojects "partial: more project folders found: $SUBPROJECTS (the checks that need a project folder ran only here; audit each folder separately)" "-" "-"
