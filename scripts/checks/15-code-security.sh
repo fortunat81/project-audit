@@ -10,7 +10,7 @@ mod_run() {
   note_version semgrep "$(semgrep --version 2>/dev/null | head -1)"
   # Semgrep exits 0 even when it finds things, so decide by the results list.
   run --json --empty '"results": *\[ *\]' semgrep semgrep.json \
-    semgrep scan --config p/default --json --quiet --metrics=off .
+    semgrep scan --config p/default --json --quiet --metrics=off --exclude audit .   # not our own results
 
   # Files Semgrep couldn't parse or scan are silently missing from "results".
   if json_looking "$OUT/semgrep.json"; then

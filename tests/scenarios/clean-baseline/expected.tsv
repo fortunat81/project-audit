@@ -7,3 +7,4 @@ exposed-keys	clean	-	-
 env-files	clean	-	-
 madge-circular	ran	-	-
 biggest-files	done	src/index\.js	-
+semgrep-coverage	clean	-	-

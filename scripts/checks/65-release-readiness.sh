@@ -53,7 +53,7 @@ mod_run() {
   check_pattern FAIL DEBUG-ON "debug mode switched on, shows internals to visitors" \
     'app\.run\([^)]*debug[[:space:]]*=[[:space:]]*True|^[[:space:]]*DEBUG[[:space:]]*=[[:space:]]*True|FLASK_DEBUG[=: "]+1|APP_DEBUG[[:space:]]*=[[:space:]]*true|WP_DEBUG.{1,12}true'
   check_pattern WARN TEST-ACCOUNT "test or default login left in the code" \
-    'password123|admin123|letmein|changeme|(admin|demo|test)@example\.(com|org)'
+    '(^|[^A-Za-z])(password123|admin123|letmein|changeme)([^A-Za-z]|$)|(admin|demo|test)@example\.(com|org)'
 
   # Browser-facing settings
   check_pattern WARN CORS-OPEN "answers requests from every website (fine only for a public read-only API)" \

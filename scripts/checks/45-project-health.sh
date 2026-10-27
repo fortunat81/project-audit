@@ -22,7 +22,10 @@ mod_run() {
   # Expo: checks the project against its SDK version (needs network)
   if has_trait expo; then
     DIM="quality"
+    if [ ! -d node_modules ]; then skip expo-doctor "dependencies not installed (offer: scan.sh --install-deps)"
+    else
     note_version expo-doctor "latest via npx (follows the Expo SDK)"
     run --match 'checks? (passed|failed)|[0-9]+/[0-9]+ checks' expo-doctor expo-doctor.txt npx --yes expo-doctor
+    fi
   fi
 }

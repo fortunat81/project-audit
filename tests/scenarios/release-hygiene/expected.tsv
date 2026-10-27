@@ -11,3 +11,4 @@ release-checks	findings	NO-TESTS	-
 release-checks	findings	NO-CI	-
 release-checks	findings	CORS-OPEN	safe\.js
 release-checks	findings	COOKIE-FLAGS	safe\.js
+release-checks	findings	TEST-ACCOUNT	safe\.js
