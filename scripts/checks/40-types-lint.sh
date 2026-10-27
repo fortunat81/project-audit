@@ -39,8 +39,8 @@ mod_run() {
     elif [ ! -d node_modules ]; then skip eslint "dependencies not installed (offer: scan.sh --install-deps)"
     elif [ -f node_modules/.bin/eslint ]; then
       note_version eslint "$(node_modules/.bin/eslint --version 2>/dev/null)"
-      run --json eslint eslint.json node_modules/.bin/eslint . -f json
-    elif has npx; then run --json eslint eslint.json npx --yes eslint . -f json
+      run --json eslint eslint.json node_modules/.bin/eslint . -f json --ignore-pattern "audit/**"
+    elif has npx; then run --json eslint eslint.json npx --yes eslint . -f json --ignore-pattern "audit/**"
     else skip eslint "npx not found"; fi
   fi
 

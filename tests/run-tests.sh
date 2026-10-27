@@ -57,7 +57,8 @@ if [ $# -gt 0 ]; then SCENARIOS="$*"; else SCENARIOS="$(ls "$HERE/scenarios")"; 
 
 for name in $SCENARIOS; do
   [ "$name" = "report-check" ] && continue
-  [ "$name" = "verdict-check" ] && continue   # handled after the scenarios
+  [ "$name" = "verdict-check" ] && continue
+  [ "$name" = "html-check" ] && continue   # handled after the scenarios
   src="$HERE/scenarios/$name"
   [ -d "$src" ] || { echo "No such scenario: $name"; FAIL=$((FAIL+1)); continue; }
   dest="$WORK/$name"
@@ -103,6 +104,10 @@ for name in $SCENARIOS; do
         for t in $want; do if [ -e "$dest/$t" ]; then bad "file absent: $t" "the scan ran code from the project"; else ok "file absent: $t"; fi; done; continue ;;
       @meta)       # a line the run's meta.txt must contain
         if grep -Eq "$want" "$OUT/meta.txt"; then ok "meta: $want"; else bad "meta: $want" "not in meta.txt"; fi; continue ;;
+      @html)       # text report.html must contain
+        if grep -Eq "$want" "$OUT/report.html" 2>/dev/null; then ok "web page has: $want"; else bad "web page has: $want" "not in report.html"; fi; continue ;;
+      @not-html)   # text report.html must NOT contain (secret values, unescaped markup)
+        if grep -Eq "$want" "$OUT/report.html" 2>/dev/null; then bad "web page has no: $want" "found in report.html"; else ok "web page has no: $want"; fi; continue ;;
       @digest)     # a line digest.txt must contain
         if grep -Eq "$want" "$OUT/digest.txt" 2>/dev/null; then ok "digest has: $want"; else bad "digest has: $want" "not in digest.txt"; fi; continue ;;
       @not-digest) # text digest.txt and findings.tsv must NOT contain (secret values, for example)
@@ -143,11 +148,7 @@ for name in $SCENARIOS; do
   done < "$src/expected.tsv"
 done
 
-# --- Report checker: a good report passes, each kind of mistake is caught
-if [ $# -eq 0 ] || [ "${1:-}" = "report-check" ]; then
-echo
-echo "=== report-check (scripts/verify-report.sh)"
-VR="$HERE/../scripts/verify-report.sh"
+# A fresh, correct report folder for the report, verdict and web-page tests
 make_report() {   # make_report <dir> <verdict> <level> <mode> <fail-count>   (a fresh, correct report)
   local d="$1"; mkdir -p "$d"
   printf 'tool	status	exit	output	dimension
@@ -166,6 +167,11 @@ Verdict: Launch with limits
 " "$mark" > "$d/AUDIT.md"
   printf '{"date":"2026-01-01","mode":"%s","rubric":2,"level":%s,"verdict":"%s","confirmed":{"critical":0,"high":0},"checklist":{"pass":%s,"fail":%s,"partial":0,"not_verified":1,"not_applicable":0},"scores":{"architecture":80,"modularity":80,"spaghettiness":80,"security":70,"quality":80,"scalability":null,"documentation":60}}'     "$4" "$3" "$2" "$([ "$5" -gt 0 ] && echo 0 || echo 1)" "$5" > "$d/scores.json"
 }
+# --- Report checker: a good report passes, each kind of mistake is caught
+if [ $# -eq 0 ] || [ "${1:-}" = "report-check" ]; then
+echo
+echo "=== report-check (scripts/verify-report.sh)"
+VR="$HERE/../scripts/verify-report.sh"
 expect_report() {   # expect_report <label> <dir> <ok|fail>
   if bash "$VR" "$2" >"$2/verify.out" 2>&1; then got=ok; else got=fail; fi
   if [ "$got" = "$3" ]; then ok "report-check: $1"; else bad "report-check: $1" "expected $3, got $got: $(grep -E '^(FAIL|WARN)' "$2/verify.out" | head -3 | tr '
@@ -220,6 +226,26 @@ expect_verdict "Level 3 is never green" launch-with-limits --level 3 --mode full
 expect_verdict "an unverified item keeps it at launch with limits" launch-with-limits --level 1 --mode full --marks "1:pass,4:unverified"
 expect_verdict "a partly done item keeps it at launch with limits" launch-with-limits --level 1 --mode full --marks "1:pass,19:partial"
 expect_verdict "no checklist at all is never green" launch-with-limits --level 1 --mode full
+fi
+fi
+
+# --- Web page: hostile text in a report or finding must be shown as text, never run
+if [ $# -eq 0 ] || [ "${1:-}" = "html-check" ]; then
+echo
+echo "=== html-check (scripts/audit_report_html.py)"
+. "$HERE/../scripts/find-python.sh"
+if ! find_python; then skip "web page (no Python 3.8+ found)"; else
+  H="$WORK/html-check"; rm -rf "$H"; make_report "$H" launch-with-limits 2 full 0
+  printf 'WARN  X-RULE: bad <img src=x onerror=alert(1)>: src/<script>alert(2)</script>.js:3
+' > "$H/release-checks.txt"
+  printf '
+<script>alert(3)</script> and <img src=x onerror=alert(4)>
+' >> "$H/AUDIT.md"
+  PYTHONUTF8=1 $PYTHON "$HERE/../scripts/audit_report_html.py" "$H" > /dev/null 2>&1
+  if [ -s "$H/report.html" ]; then ok "web page is built"; else bad "web page is built" "report.html missing or empty"; fi
+  if grep -Eq '<script>alert|<img src=x onerror' "$H/report.html"; then bad "hostile markup is not rendered" "raw markup found in report.html"; else ok "hostile markup is not rendered"; fi
+  if grep -q 'Launch with limits' "$H/report.html" && grep -q 'No secrets' "$H/report.html"; then ok "web page shows the verdict and the checklist"; else bad "web page shows the verdict and the checklist" "missing"; fi
+  if grep -Eq 'https?://[^"'"'"' )]*\.(js|css)' "$H/report.html"; then bad "web page needs no internet" "an external file is referenced"; else ok "web page needs no internet"; fi
 fi
 fi
 

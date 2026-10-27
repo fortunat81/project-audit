@@ -35,6 +35,17 @@ Then, in Claude Code inside any project, ask: "audit this project". If a project
 | `audit-accepted.tsv` | Optional, in the audited project: risks the owner knowingly accepted, each with a reason and an expiry date |
 | `tests/` | Test scenarios with planted problems, and the runner that checks the auditor catches them |
 
+## What you get after a scan
+
+| File in `audit/<run>/` | What it is |
+|---|---|
+| `report.html` | One web page for the run: verdict, findings you can filter and search, what was and wasn't checked, scores, the launch checklist and the written report. Open it in any browser (`bash scripts/scan.sh --open`). No internet needed. |
+| `digest.txt`, `findings.tsv` | A short digest and the list of findings with stable IDs |
+| `AUDIT.md`, `scores.json` | The written report and its scores (written by Claude; checked by `--verify-report`) |
+| `manifest.tsv`, `meta.txt` | What ran and how it ended; what exactly was audited |
+
+Other commands: `--verdict` (the release verdict computed from the rules), `--verify-report`, `--all` (every project folder), `--untrusted`, `--check` / `--install`. The scripts that build the digest, the report check, the verdict and the web page are Python 3.8 or newer using only the standard library; the scanners themselves are separate programs.
+
 ## What runs code from the audited project
 
 Most checks only read files. A few run the project's own code, which is fine for your own projects and risky for anyone else's. For code you didn't write, run `bash scripts/scan.sh --untrusted`: it skips the ones marked "runs project code", says so in the report, and removes secret-looking environment variables first. Network access stays on (rules and advisories are downloaded).

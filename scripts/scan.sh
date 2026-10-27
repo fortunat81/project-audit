@@ -9,6 +9,7 @@
 #   bash scan.sh --all         show what was detected and which modules apply (changes nothing)
 #   bash scan.sh --all            scan this folder and every project folder in it, each with its own checks
 #   bash scan.sh --projects       list project folders (this one and any in subfolders); audit each (changes nothing)
+#   bash scan.sh --report-html    rebuild the web page (report.html) for the latest run; --open also opens it in your browser
 #   bash scan.sh --verdict        compute the release verdict from scores.json and the checklist in AUDIT.md (changes nothing)
 #   bash scan.sh --verify-report  check the finished AUDIT.md and scores.json for mistakes (changes nothing)
 #   bash scan.sh --check          list missing tools and how to install them (changes nothing)
@@ -361,6 +362,22 @@ if [ "${1:-}" = "--all" ]; then
     done
   } | tee "$ALL_SUMMARY"
   echo "Combined summary saved in: $ALL_SUMMARY"
+  exit 0
+fi
+
+if [ "${1:-}" = "--report-html" ] || [ "${1:-}" = "--open" ]; then
+  # (Re)build the web page for a run, so it includes the written report and verdict; --open also shows it
+  MODE_ARG="$1"; shift
+  if ! find_python; then echo "The web page needs Python 3.8 or newer (none found)."; exit 1; fi
+  D="${1:-}"; if [ -z "$D" ] && [ -f audit/latest.txt ]; then D="$(cat audit/latest.txt)"; fi
+  [ -d "$D" ] || { echo "No audit folder found. Run the scan first."; exit 1; }
+  PYTHONUTF8=1 $PYTHON "$SCRIPT_DIR/audit_report_html.py" "$D" || exit 1
+  if [ "$MODE_ARG" = "--open" ]; then
+    if is_windows; then cmd //c start "" "$(cygpath -w "$D/report.html")" >/dev/null 2>&1
+    elif has open; then open "$D/report.html"
+    elif has xdg-open; then xdg-open "$D/report.html" >/dev/null 2>&1
+    else echo "Open this file in a browser: $D/report.html"; fi
+  fi
   exit 0
 fi
 
@@ -755,6 +772,10 @@ echo "$OUT" > "$ROOT/audit/latest.txt"
 if find_python; then
   PYTHONUTF8=1 $PYTHON "$SCRIPT_DIR/audit_digest.py" "$OUT" >/dev/null 2>&1 || echo "NOTE: digest.txt could not be built; read manifest.tsv and the tool outputs"
 else echo "NOTE: digest.txt skipped (needs Python 3.8 or newer); read manifest.tsv and the tool outputs"; fi
+# One web page for the run (report.html): open it in a browser. Rebuilt with --report-html once AUDIT.md is written.
+if [ -n "${PYTHON:-}" ]; then
+  PYTHONUTF8=1 $PYTHON "$SCRIPT_DIR/audit_report_html.py" "$OUT" >/dev/null 2>&1 && echo "Screen: $OUT/report.html  (open it in a browser, or run: bash scan.sh --open)"
+fi
 
 # Coverage summary: how much of the audit actually ran
 awk -F'\t' 'NR>1 {
