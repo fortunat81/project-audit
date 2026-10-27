@@ -23,6 +23,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import audit_verdict  # noqa: E402
+import audit_translate  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIMENSIONS = ["architecture", "modularity", "spaghettiness", "security", "quality", "scalability", "documentation"]
@@ -150,6 +151,44 @@ def check_report(r, scores, report_text, manifest_text, counts, verdict, mode, l
             r.ok("tool statuses in AUDIT.md match manifest.tsv")
 
 
+def check_translations(r, folder, scores):
+    """AUDIT.<lang>.md files must say the same thing as AUDIT.md: same checklist marks, same verdict."""
+    primary = audit_translate.primary_language(folder)
+    main_text = read(os.path.join(folder, "AUDIT.md"))
+    if main_text is None:
+        return
+    main_marks = audit_verdict.read_marks(main_text)
+    found = False
+    for lang in audit_translate.LANGS:
+        if lang == primary:
+            continue
+        path = os.path.join(folder, "AUDIT.%s.md" % lang)
+        text = read(path)
+        if text is None:
+            continue
+        found = True
+        marks = audit_verdict.read_marks(text)
+        if marks == main_marks:
+            r.ok("AUDIT.%s.md has the same checklist marks as AUDIT.md" % lang)
+        else:
+            diff = sorted(n for n in set(marks) | set(main_marks) if marks.get(n) != main_marks.get(n))
+            r.fail("AUDIT.%s.md differs from AUDIT.md in checklist item(s): %s" % (lang, ", ".join(map(str, diff[:10]))))
+        verdict = scores.get("verdict")
+        table = audit_verdict.VERDICT_TEXT_FR if lang == "fr" else audit_verdict.VERDICT_TEXT
+        if verdict in table:
+            if table[verdict] in text:
+                r.ok("AUDIT.%s.md states the verdict (%s)" % (lang, table[verdict]))
+            else:
+                r.fail("AUDIT.%s.md does not contain the verdict text '%s'" % (lang, table[verdict]))
+        a, b = len(re.findall(r"(?m)^#{1,4} ", main_text)), len(re.findall(r"(?m)^#{1,4} ", text))
+        if a != b:
+            r.warn("AUDIT.%s.md has %d headings but AUDIT.md has %d" % (lang, b, a))
+        if SECRET_SHAPES.search(text):
+            r.fail("AUDIT.%s.md contains text shaped like a secret" % lang)
+    if not found:
+        r.warn("no translated report (AUDIT.<lang>.md): the page shows the report in one language only (scan.sh --translate adds the other)")
+
+
 def check_secrets(r, report_path, scores_path):
     leak = False
     for path in (report_path, scores_path):
@@ -202,7 +241,8 @@ def check_fixes(r, folder):
         known.add(line.split("	")[0])
     problems, seen = 0, set()
     for i, x in enumerate(fixes, 1):
-        if not isinstance(x, dict) or not all(isinstance(x.get(k), str) and x.get(k) for k in ("id", "title", "who")):
+        title_ok = isinstance(x, dict) and isinstance(x.get("title"), (str, dict)) and bool(x.get("title"))
+        if not isinstance(x, dict) or not title_ok or not all(isinstance(x.get(k), str) and x.get(k) for k in ("id", "who")):
             r.fail("fix %d in fixes.json needs id, title and who (text)" % i)
             problems += 1
             continue
@@ -219,6 +259,10 @@ def check_fixes(r, folder):
             problems += 1
         if x["who"] == "claude" and not (x.get("change") and x.get("verify")):
             r.warn("fix %s has no 'change' or no 'verify' text; Claude will have little to go on" % x["id"])
+        for key in audit_translate.TEXT_FIELDS:
+            v = x.get(key)
+            if isinstance(v, dict) and v and set(v) & set(audit_translate.LANGS) != set(audit_translate.LANGS):
+                r.warn("fix %s: '%s' is available in only one language" % (x["id"], key))
         if SECRET_SHAPES.search(json.dumps(x)):
             r.fail("fix %s contains text shaped like a secret" % x["id"])
             problems += 1
@@ -258,6 +302,8 @@ def main(argv):
     if report_text is not None:
         check_report(r, scores, report_text, read(os.path.join(folder, "manifest.tsv")), counts, verdict, mode, level)
     check_fixes(r, folder)
+    if report_text is not None:
+        check_translations(r, folder, scores)
     check_secrets(r, report_path, scores_path)
 
     print()

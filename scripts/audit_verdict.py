@@ -25,6 +25,8 @@ BLOCKING_GROUPS = "ABCD"       # a failed item here means "don't launch yet"
 EMOJI_MARKS = (("✅", "pass"), ("❌", "fail"), ("⚠", "partial"), ("❓", "unverified"), ("➖", "na"))
 VERDICT_TEXT = {"dont-launch": "Don't launch yet", "launch-with-limits": "Launch with limits",
                 "no-blocking-problems": "No blocking problems found"}
+VERDICT_TEXT_FR = {"dont-launch": "Ne pas lancer tout de suite", "launch-with-limits": "Lancement avec réserves",
+                   "no-blocking-problems": "Aucun problème bloquant trouvé"}
 
 
 def group_of(number):

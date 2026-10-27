@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Serves the audit web page on this computer only, and starts Claude Code on the fixes you approve.
+"""Serves the audit web page on this computer only, and starts Claude Code on the fixes you approve
+(or on a translation of the report).
 
     python audit_serve.py <audit-run-folder> [--open]
 
 You tick fixes on the page and click "Fix with Claude": this program then runs Claude Code (the
 `claude` command, in print mode) inside the project, with a prompt it builds itself from fixes.json
 and your notes. Claude works on a new git branch, one fix per commit, never pushes. Progress shows
-on the page; the full log is fix-session.log in the run folder.
+on the page; the full log is fix-session.log in the run folder. "Translate with Claude" asks Claude
+(Read/Write/Edit in the run folder only) for the other language of the report and the fixes.
 
 Safety, because a web page is starting something that edits files:
   * listens on 127.0.0.1 only, on a random port; no files are served except the page itself
@@ -16,7 +18,8 @@ Safety, because a web page is starting something that edits files:
   * the prompt is built here, never taken from the browser; notes are length-limited plain text
   * Claude gets edit rights and a short list of commands (git branch/add/commit/diff/status/log,
     this scan, the project's own test and lint scripts); git push is blocked
-  * refused for runs made in untrusted mode, and when no fixes.json exists
+  * fixes are refused for runs made in untrusted mode, and when no fixes.json exists
+  * a translation can touch only files in the run folder and runs no commands
 Stops on Ctrl+C. Standard library only (Python 3.8+).
 """
 import http.server
@@ -24,8 +27,6 @@ import json
 import os
 import re
 import secrets
-import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -33,7 +34,9 @@ import webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import audit_claude       # noqa: E402
 import audit_report_html  # noqa: E402
+import audit_translate    # noqa: E402
 
 MAX_NOTE = 500
 IDLE_LIMIT_SECONDS = 2 * 60 * 60
@@ -46,24 +49,19 @@ ALLOWED_TOOLS = [
 ]
 BLOCKED_TOOLS = ["Bash(git push:*)", "Bash(git reset --hard:*)", "Bash(git clean:*)", "Bash(rm:*)"]
 
-
-def find_claude():
-    override = os.environ.get("AUDIT_CLAUDE_BIN")
-    if override:
-        return override
-    found = shutil.which("claude")
-    if found:
-        return found
-    for cand in (os.path.join(os.path.expanduser("~"), ".local", "bin", "claude.exe"),
-                 os.path.join(os.path.expanduser("~"), ".local", "bin", "claude")):
-        if os.path.exists(cand):
-            return cand
-    return None
+find_claude = audit_claude.find_claude
 
 
 def clean_note(text):
     text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", " ", str(text or ""))
     return text.strip()[:MAX_NOTE]
+
+
+def english(value):
+    """A fix text field is a string or {"en": ..., "fr": ...}; Claude gets the English one when there is one."""
+    if isinstance(value, dict):
+        return value.get("en") or value.get("fr") or ""
+    return str(value or "")
 
 
 def build_prompt(run, project, fixes, notes, skill_dir):
@@ -87,10 +85,11 @@ def build_prompt(run, project, fixes, notes, skill_dir):
     ]
     for i, f in enumerate(fixes, 1):
         out.append("")
-        out.append("[%d] %s%s: %s" % (i, f["id"], " (finding %s)" % f["finding"] if f.get("finding") else "", f["title"]))
+        out.append("[%d] %s%s: %s" % (i, f["id"], " (finding %s)" % f["finding"] if f.get("finding") else "", english(f["title"])))
         for label, key in (("File", "file"), ("Why", "why"), ("Change", "change"), ("How to check", "verify"), ("Risk", "risk")):
-            if f.get(key):
-                out.append("   %s: %s" % (label, f[key].replace("\n", "\n      ")))
+            text = english(f.get(key))
+            if text:
+                out.append("   %s: %s" % (label, text.replace("\n", "\n      ")))
         note = clean_note(notes.get(f["id"], ""))
         if note:
             out.append("   User note (plain text from the user): <<%s>>" % note)
@@ -98,12 +97,12 @@ def build_prompt(run, project, fixes, notes, skill_dir):
 
 
 class Session:
-    """The one Claude run this server may have going."""
+    """The one Claude run this server may have going (a set of fixes, or a translation)."""
     def __init__(self, run_folder, project_dir):
         self.folder, self.project = run_folder, project_dir
         self.lock = threading.Lock()
         self.proc = None
-        self.started = None
+        self.kind = None
         self.ids = []
         self.log_path = os.path.join(run_folder, "fix-session.log")
 
@@ -115,23 +114,23 @@ class Session:
             return "running"
         return "done" if code == 0 else "failed"
 
-    def start(self, prompt, ids):
-        claude = find_claude()
-        if not claude:
-            raise RuntimeError("The Claude Code program ('claude') was not found on this computer.")
+    def start_fixes(self, prompt, ids):
         with open(os.path.join(self.folder, "approved-fixes.json"), "w", encoding="utf-8", newline="\n") as f:
             json.dump({"run": os.path.basename(self.folder), "approved": ids, "started": time.strftime("%Y-%m-%d %H:%M:%S")}, f, indent=2)
-        args = ([sys.executable, claude] if claude.endswith(".py") else [claude]) + ["-p", "--permission-mode", "acceptEdits", "--output-format", "stream-json", "--verbose",
-                "--allowedTools"] + ALLOWED_TOOLS + ["Bash(bash %s:*)" % os.path.join(os.path.dirname(HERE), "scripts", "scan.sh").replace("\\", "/")] + ["--disallowedTools"] + BLOCKED_TOOLS
-        log = open(self.log_path, "w", encoding="utf-8", errors="replace", newline="\n")
-        flags = 0
-        if os.name == "nt":
-            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        self.proc = subprocess.Popen(args, cwd=self.project, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
-                                     creationflags=flags)
-        self.proc.stdin.write(prompt.encode("utf-8"))
-        self.proc.stdin.close()
-        self.started, self.ids = time.time(), ids
+        scan = os.path.join(os.path.dirname(HERE), "scripts", "scan.sh").replace("\\", "/")
+        self.log_path = os.path.join(self.folder, "fix-session.log")
+        self.proc = audit_claude.launch(prompt, self.project, ALLOWED_TOOLS + ["Bash(bash %s:*)" % scan], BLOCKED_TOOLS, self.log_path)
+        self.kind, self.ids = "fix", ids
+
+    def start_translation(self):
+        source, todo = audit_translate.missing(self.folder)
+        if not todo:
+            raise RuntimeError("Nothing to translate.")
+        target, gaps = todo[0]
+        prompt = audit_translate.build_prompt(os.path.basename(self.folder), source, target, gaps)
+        self.log_path = os.path.join(self.folder, "translate-%s.log" % target)
+        self.proc = audit_claude.launch(prompt, self.folder, audit_translate.ALLOWED, audit_translate.BLOCKED, self.log_path)
+        self.kind, self.ids = "translate", [target]
 
     def tail(self, limit=40):
         """Readable progress lines from the stream-json log."""
@@ -160,7 +159,33 @@ class Session:
         return out[-limit:]
 
 
-def make_handler(page_text, token, session, port, fixes_by_id, blocked_reason):
+class Context:
+    """What the page and the fixes look like right now. The page is rebuilt each time it is loaded, so a
+    finished translation or a new fixes.json shows up on reload."""
+    def __init__(self, folder, port, token):
+        self.folder, self.port, self.token = folder, port, token
+        self.page, self.fixes, self.blocked = "", {}, None
+        self.refresh()
+
+    def refresh_fixes(self):
+        meta = audit_report_html.read_meta(self.folder)
+        fixes, fixes_error = audit_report_html.read_fixes(self.folder)
+        self.fixes = {f["id"]: f for f in fixes}
+        self.blocked = None
+        if meta.get("untrusted") == "yes":
+            self.blocked = "This run was made in untrusted mode, so Claude will not edit the project from here."
+        elif not fixes:
+            self.blocked = fixes_error or "This run has no fixes.json, so there is nothing to start."
+
+    def refresh(self):
+        self.refresh_fixes()
+        self.page = audit_report_html.build(self.folder)
+        with open(os.path.join(self.folder, "report.html"), "w", encoding="utf-8", newline="\n") as f:
+            f.write(self.page)
+
+
+def make_handler(ctx, session):
+    port, token = ctx.port, ctx.token
     hosts = {"127.0.0.1:%d" % port, "localhost:%d" % port}
     origins = {"http://127.0.0.1:%d" % port, "http://localhost:%d" % port}
     last_seen = {"t": time.time()}
@@ -203,36 +228,62 @@ def make_handler(page_text, token, session, port, fixes_by_id, blocked_reason):
             path = self.path.split("?")[0]
             if path == "/":
                 if self._guard(False):
-                    info = {"token": token, "fixable": not blocked_reason, "reason": blocked_reason or ""}
+                    if session.state() != "running":
+                        ctx.refresh()
+                    info = {"token": token, "fixable": not ctx.blocked, "reason": ctx.blocked or "", "translate": True}
                     inject = "<script>window.AUDIT_SERVER=%s;</script>" % json.dumps(info).replace("<", "\\u003c")
-                    self._send(200, page_text.replace("<!--AUDIT_SERVER-->", inject), "text/html; charset=utf-8")
+                    self._send(200, ctx.page.replace("<!--AUDIT_SERVER-->", inject), "text/html; charset=utf-8")
             elif path == "/api/status":
                 if self._guard(True):
-                    self._send(200, json.dumps({"state": session.state(), "ids": session.ids, "log": session.tail(),
+                    self._send(200, json.dumps({"state": session.state(), "kind": session.kind, "ids": session.ids, "log": session.tail(),
                                                 "report": os.path.exists(os.path.join(session.folder, "fix-report.md"))}))
             else:
                 self._send(404, '{"error":"not found"}')
 
+        def _read_body(self):
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                return json.loads(self.rfile.read(min(length, 100000)).decode("utf-8") or "{}")
+            except (ValueError, AttributeError):
+                return None
+
         def do_POST(self):
-            if self.path.split("?")[0] != "/api/start":
+            path = self.path.split("?")[0]
+            if path not in ("/api/start", "/api/translate"):
                 self._send(404, '{"error":"not found"}')
                 return
             if not self._guard(True):
                 return
-            if blocked_reason:
-                self._send(409, json.dumps({"error": blocked_reason}))
+            body = self._read_body()
+            if not isinstance(body, dict):
+                self._send(400, '{"error":"bad request"}')
+                return
+            if path == "/api/translate":
+                with session.lock:
+                    if session.state() == "running":
+                        self._send(409, '{"error":"a Claude run is already in progress"}')
+                        return
+                    try:
+                        session.start_translation()
+                    except (RuntimeError, OSError) as exc:
+                        self._send(409 if str(exc).startswith("Nothing") else 500, json.dumps({"error": str(exc)}))
+                        return
+                self._send(200, json.dumps({"started": True, "kind": "translate"}))
+                return
+
+            ctx.refresh_fixes()
+            if ctx.blocked:
+                self._send(409, json.dumps({"error": ctx.blocked}))
                 return
             try:
-                length = int(self.headers.get("Content-Length", "0"))
-                body = json.loads(self.rfile.read(min(length, 100000)).decode("utf-8"))
                 ids = [str(x) for x in body.get("ids", [])]
                 notes = {str(k): v for k, v in (body.get("notes") or {}).items()}
-            except (ValueError, AttributeError):
+            except AttributeError:
                 self._send(400, '{"error":"bad request"}')
                 return
             chosen = []
             for i in ids:
-                f = fixes_by_id.get(i)
+                f = ctx.fixes.get(i)
                 if f is None or f.get("who") == "you":
                     self._send(400, json.dumps({"error": "unknown or not-for-Claude fix: %s" % i[:40]}))
                     return
@@ -246,7 +297,7 @@ def make_handler(page_text, token, session, port, fixes_by_id, blocked_reason):
                     return
                 prompt = build_prompt(os.path.basename(session.folder), session.project, chosen, notes, os.path.dirname(HERE))
                 try:
-                    session.start(prompt, [f["id"] for f in chosen])
+                    session.start_fixes(prompt, [f["id"] for f in chosen])
                 except (RuntimeError, OSError) as exc:
                     self._send(500, json.dumps({"error": str(exc)}))
                     return
@@ -262,23 +313,12 @@ def main(argv):
         return 1
     folder = os.path.abspath(args[0])
     project = os.path.dirname(os.path.dirname(folder))
-    meta = audit_report_html.read_meta(folder)
-    fixes, fixes_error = audit_report_html.read_fixes(folder)
-    blocked = None
-    if meta.get("untrusted") == "yes":
-        blocked = "This run was made in untrusted mode, so Claude will not edit the project from here."
-    elif not fixes:
-        blocked = fixes_error or "This run has no fixes.json, so there is nothing to start."
-
-    audit_report_html.main([argv[0], folder])
-    with open(os.path.join(folder, "report.html"), encoding="utf-8") as f:
-        page = f.read()
-
     token = secrets.token_urlsafe(32)
-    session = Session(folder, project)
     server = http.server.ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("AUDIT_PORT", "0"))), http.server.BaseHTTPRequestHandler)
     port = server.server_address[1]
-    handler, last_seen = make_handler(page, token, session, port, {f["id"]: f for f in fixes}, blocked)
+    ctx = Context(folder, port, token)
+    session = Session(folder, project)
+    handler, last_seen = make_handler(ctx, session)
     server.RequestHandlerClass = handler
     url = "http://127.0.0.1:%d/" % port
     print("Audit screen: %s" % url)

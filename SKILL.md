@@ -166,7 +166,7 @@ Rules:
 
 ## Step 6: Write the report and the history
 
-Load `reviews/release-gate.md` first. Write the report in the language the user writes to you (English or French); the web page's own labels switch language by themselves. Write `audit/<same folder>/AUDIT.md` so that a non-programmer can stop reading after the first section:
+Load `reviews/release-gate.md` first. Write the report in the language the user writes to you (English or French) and put `"language": "en"` (or `"fr"`) in `scores.json`. The page is fully bilingual: its labels, the checklist items, plain-language descriptions of common finding rules and the check results are translated by the tool itself; the written report and the fix texts need the other language too. Write `AUDIT.<other>.md` yourself (same headings, same tables with the same marks, same IDs, paths and code; the verdict phrases in `reviews/release-gate.md`, French: *Ne pas lancer tout de suite*, *Lancement avec réserves*, *Aucun problème bloquant trouvé*) and give each fix text field as `{"en": "...", "fr": "..."}`, or, if you wrote only one language, run `bash <skill-dir>/scripts/scan.sh --translate` (it asks Claude Code to produce the missing language, then rebuilds the page). `--verify-report` checks that the two versions agree. Write `audit/<same folder>/AUDIT.md` so that a non-programmer can stop reading after the first section:
 
 1. **In plain words** (at most 12 lines, no jargon; explain any unavoidable term in a few words):
    - The **verdict** from the release gate (🔴 Don't launch yet / 🟡 Launch with limits / 🟢 No blocking problems found), the level used, and the mode (quick or full) with the one-line reason.

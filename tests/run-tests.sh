@@ -59,7 +59,8 @@ for name in $SCENARIOS; do
   [ "$name" = "report-check" ] && continue
   [ "$name" = "verdict-check" ] && continue
   [ "$name" = "html-check" ] && continue
-  [ "$name" = "serve-check" ] && continue   # handled after the scenarios
+  [ "$name" = "serve-check" ] && continue
+  [ "$name" = "translate-check" ] && continue   # handled after the scenarios
   src="$HERE/scenarios/$name"
   [ -d "$src" ] || { echo "No such scenario: $name"; FAIL=$((FAIL+1)); continue; }
   dest="$WORK/$name"
@@ -294,6 +295,21 @@ if ! find_python; then skip "local server (no Python 3.8+ found)"; else
       "BAD: "*) bad "server: ${line#BAD: }" ;;
     esac
   done < <(PYTHONUTF8=1 $PYTHON "$HERE/serve_test.py" 2>&1)
+fi
+fi
+
+# --- English and French: tables, translate helper (with a stand-in for claude), report check on translations
+if [ $# -eq 0 ] || [ "${1:-}" = "translate-check" ]; then
+echo
+echo "=== translate-check (scripts/audit_i18n.py, audit_translate.py)"
+. "$HERE/../scripts/find-python.sh"
+if ! find_python; then skip "translations (no Python 3.8+ found)"; else
+  while IFS= read -r line; do
+    case "$line" in
+      "OK: "*) ok "translate: ${line#OK: }" ;;
+      "BAD: "*) bad "translate: ${line#BAD: }" ;;
+    esac
+  done < <(PYTHONUTF8=1 $PYTHON "$HERE/translate_test.py" 2>&1)
 fi
 fi
 

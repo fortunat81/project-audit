@@ -36,6 +36,8 @@ def make_run(root, untrusted=False, fixes=True):
         f.write("tool\tstatus\texit\toutput\tdimension\ngitleaks\tclean\t0\tg.json\tsecurity\n")
     with open(os.path.join(run, "meta.txt"), "w") as f:
         f.write("date=2026-01-01\ncommit=abc\nuntrusted=%s\n" % ("yes" if untrusted else "no"))
+    with open(os.path.join(run, "AUDIT.md"), "w", encoding="utf-8") as f:
+        f.write("# Audit"+"\n\n"+"Verdict: Launch with limits"+"\n\n"+"| # | Item | Mark | By | Evidence |"+"\n"+"|---|---|---|---|---|"+"\n"+"| 1 | No secrets | ok | T | ok |"+"\n")
     if fixes:
         with open(os.path.join(run, "fixes.json"), "w") as f:
             json.dump(FIXES, f)
@@ -130,6 +132,26 @@ def main():
                 break
             time.sleep(0.5)
         say(st["state"] == "done" and any("Applied P-3" in l for l in st["log"]), "progress is readable and the run finishes", st["state"])
+
+        # translation: allowed to read and write files only, in the run folder
+        if os.path.exists(CALLED):
+            os.remove(CALLED)
+        code, body = call(port, "/api/translate", "POST", None, {})
+        say(code == 403, "starting a translation needs the token")
+        code, body = call(port, "/api/translate", "POST", token, {})
+        say(code == 200, "a translation can be started from the page", "%s %s" % (code, body))
+        for _ in range(60):
+            if os.path.exists(CALLED) and "AUDIT.fr.md" in open(CALLED, encoding="utf-8").read():
+                break
+            time.sleep(0.1)
+        text = open(CALLED, encoding="utf-8").read() if os.path.exists(CALLED) else ""
+        head = text.split("---")[0]
+        say("--allowedTools Read Write Edit Glob Grep" in head and "--disallowedTools Bash" in head, "a translation gets file tools only and no commands", head[:300])
+        say("Translate part of an audit report from English to French" in text, "the translation instruction is built by the server")
+        for _ in range(60):
+            if json.loads(call(port, "/api/status", token=token)[1])["state"] != "running":
+                break
+            time.sleep(0.5)
     finally:
         proc.terminate()
         proc.wait(timeout=10)

@@ -10,6 +10,7 @@
 #   bash scan.sh --all            scan this folder and every project folder in it, each with its own checks
 #   bash scan.sh --projects       list project folders (this one and any in subfolders); audit each (changes nothing)
 #   bash scan.sh --report-html    rebuild the web page (report.html) for the latest run; --open also opens it in your browser
+#   bash scan.sh --translate      add the other language (English or French) of the report and fixes, using Claude Code
 #   bash scan.sh --serve          open the audit screen from a local server: tick fixes and click "Fix with Claude" to start Claude Code on them
 #   bash scan.sh --verdict        compute the release verdict from scores.json and the checklist in AUDIT.md (changes nothing)
 #   bash scan.sh --verify-report  check the finished AUDIT.md and scores.json for mistakes (changes nothing)
@@ -380,6 +381,16 @@ if [ "${1:-}" = "--report-html" ] || [ "${1:-}" = "--open" ]; then
     else echo "Open this file in a browser: $D/report.html"; fi
   fi
   exit 0
+fi
+
+if [ "${1:-}" = "--translate" ]; then
+  # Make the written report and the fixes available in both English and French (asks Claude Code to translate what is missing)
+  shift
+  if ! find_python; then echo "The translation helper needs Python 3.8 or newer (none found)."; exit 1; fi
+  D="${1:-}"; if [ -z "$D" ] && [ -f audit/latest.txt ]; then D="$(cat audit/latest.txt)"; fi
+  [ -d "$D" ] || { echo "No audit folder found. Run the scan first."; exit 1; }
+  PYTHONUTF8=1 $PYTHON "$SCRIPT_DIR/audit_translate.py" "$D" && PYTHONUTF8=1 $PYTHON "$SCRIPT_DIR/audit_report_html.py" "$D"
+  exit $?
 fi
 
 if [ "${1:-}" = "--serve" ]; then
