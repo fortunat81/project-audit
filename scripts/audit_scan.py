@@ -261,7 +261,7 @@ def scan(ctx):
     ctx.write("versions.txt", "")
     audit_progress.write(ctx.out, "scanning")
     if os.environ.get("AUDIT_OPEN") == "1" and not os.environ.get("AUDIT_SUB"):
-        open_file(os.path.join(ctx.out, "progress.html"))   # the page follows the scan and becomes the report
+        open_progress(ctx.out)   # the page follows the scan and becomes the report
     write_meta(ctx)
     _record_trust_and_subprojects(ctx)
     _run_modules(ctx)
@@ -373,6 +373,33 @@ def open_file(page):
     print("Open this file in a browser: %s" % page)
 
 
+PROGRESS_OPENED = "progress-opened.txt"
+
+
+def open_progress(run_dir, opener=open_file):
+    """Opens the live progress page and leaves a note, so the --open that follows does not open a second window."""
+    opener(os.path.join(run_dir, "progress.html"))
+    try:
+        with open(os.path.join(run_dir, PROGRESS_OPENED), "w", encoding="utf-8", newline="\n") as f:
+            f.write("progress.html was opened at the start; it turns into the report by itself\n")
+    except OSError:
+        pass
+
+
+def open_report(run_dir, opener=open_file):
+    """--open: opens report.html, unless the progress page opened at the start of this run is still the window (it
+    switches to the report by itself). The note is used once, so a later --open opens the report again."""
+    note = os.path.join(run_dir, PROGRESS_OPENED)
+    if os.path.isfile(note):
+        try:
+            os.remove(note)
+        except OSError:
+            pass
+        print("The page is already open in your browser and has switched to the report.")
+        return
+    opener(os.path.join(run_dir, "report.html"))
+
+
 def find_run_dir(rest, cwd):
     """The audit run folder for the helper commands: the one given, else the folder we are standing in when it is a
     run folder, else the latest run of the project (looked up from here and then from each parent folder)."""
@@ -415,7 +442,7 @@ def delegate(mode, rest):
     if audit_report_html.main(["audit_report_html", run_dir]):
         return 1
     if mode == "--open":
-        open_file(os.path.join(run_dir, "report.html"))
+        open_report(run_dir)
     return 0
 
 

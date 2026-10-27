@@ -142,6 +142,22 @@ def main():
     cmd = audit_scan.app_window_command(page, lambda names: "/bin/" + names[-1])
     say(bool(cmd) and cmd[0].endswith(audit_scan.BROWSER_NAMES[-1]), "the first browser found in the list is used")
 
+    # one window per run: the progress page opened at the start already turns into the report, so --open must not
+    # open a second window after it; a later --open (the window was closed) opens again
+    opened = []
+    run = os.path.join(root, "run")
+    os.makedirs(run)
+    audit_scan.open_report(run, opened.append)
+    say(len(opened) == 1, "--open with no progress window opens the report", opened)
+    del opened[:]
+    audit_scan.open_progress(run, opened.append)
+    say(len(opened) == 1 and opened[0].endswith("progress.html"), "the scan opens the progress page", opened)
+    del opened[:]
+    audit_scan.open_report(run, opened.append)
+    say(opened == [], "--open right after the progress page opened does not open a second window", opened)
+    audit_scan.open_report(run, opened.append)
+    say(len(opened) == 1 and opened[0].endswith("report.html"), "the next --open opens the report again", opened)
+
 
 if __name__ == "__main__":
     main()
