@@ -85,6 +85,14 @@ export AUDIT_TEST_WORK="$WORK"
 . "$REPO/scripts/find-python.sh"
 find_python || { echo "The tests need Python 3.8 or newer (none found)."; exit 1; }
 export AUDIT_TEST_PY="$PYTHON"
+# Several tests start the same npx tool at once, and two downloads into npm's shared cache corrupt it.
+# So fetch the pinned npx tools once, one after another, before the parallel part.
+if command -v npx >/dev/null 2>&1 && [ -z "${AUDIT_NO_PREWARM:-}" ]; then
+  for pkg in $(grep -hE '^(MADGE|JSCPD)_PKG *=' "$REPO/scripts/audit_core.py" | cut -d'"' -f2); do
+    echo "Fetching $pkg (once, before the parallel run)"
+    npx --yes "$pkg" --version >/dev/null 2>&1 || true
+  done
+fi
 printf '%s\n' $LIST | xargs -P "$JOBS" -I{} bash -c 'echo ">>> start $1" >&2; PYTHONUTF8=1 $AUDIT_TEST_PY "$3/with_timeout.py" "${TEST_TIMEOUT:-300}" "$2/results/$1.txt" bash "$3/run-tests.sh" --one "$1"; echo ">>> done $1 (exit $?)" >&2' _ {} "$WORK" "$HERE"
 
 for n in $LIST; do
