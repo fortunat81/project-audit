@@ -58,7 +58,8 @@ if [ $# -gt 0 ]; then SCENARIOS="$*"; else SCENARIOS="$(ls "$HERE/scenarios")"; 
 for name in $SCENARIOS; do
   [ "$name" = "report-check" ] && continue
   [ "$name" = "verdict-check" ] && continue
-  [ "$name" = "html-check" ] && continue   # handled after the scenarios
+  [ "$name" = "html-check" ] && continue
+  [ "$name" = "serve-check" ] && continue   # handled after the scenarios
   src="$HERE/scenarios/$name"
   [ -d "$src" ] || { echo "No such scenario: $name"; FAIL=$((FAIL+1)); continue; }
   dest="$WORK/$name"
@@ -181,6 +182,12 @@ RC="$WORK/report-check"; rm -rf "$RC"
 make_report "$RC/good" launch-with-limits 2 full 0;             expect_report "a correct report passes" "$RC/good" ok
 make_report "$RC/note" launch-with-limits 2 full 0; sed -i 's/semgrep (findings)/semgrep (findings, see note)/' "$RC/note/AUDIT.md"
 expect_report "a status followed by a note is read correctly" "$RC/note" ok
+make_report "$RC/fixok" launch-with-limits 2 full 0; printf '{"fixes":[{"id":"P-1","title":"Pin actions","who":"claude","change":"x","verify":"y"}]}' > "$RC/fixok/fixes.json"
+expect_report "a well-formed fixes.json passes" "$RC/fixok" ok
+make_report "$RC/fixbad" launch-with-limits 2 full 0; printf '{"fixes":[{"id":"P-1","title":"a","who":"robot"},{"id":"P-1","title":"b","who":"claude"}]}' > "$RC/fixbad/fixes.json"
+expect_report "a bad 'who' and a repeated fix id are caught" "$RC/fixbad" fail
+make_report "$RC/fixsecret" launch-with-limits 2 full 0; printf '{"fixes":[{"id":"P-1","title":"a","who":"you","change":"use ghp_%s"}]}' "$(rand_alnum 36)" > "$RC/fixsecret/fixes.json"
+expect_report "a secret-looking value inside fixes.json is caught" "$RC/fixsecret" fail
 make_report "$RC/counts" launch-with-limits 2 full 0; sed -i 's/"pass":1/"pass":3/' "$RC/counts/scores.json"
 expect_report "marks that differ from scores.json are caught" "$RC/counts" fail
 make_report "$RC/status" launch-with-limits 2 full 0; sed -i 's/gitleaks (clean)/gitleaks (findings)/' "$RC/status/AUDIT.md"
@@ -245,7 +252,41 @@ if ! find_python; then skip "web page (no Python 3.8+ found)"; else
   if [ -s "$H/report.html" ]; then ok "web page is built"; else bad "web page is built" "report.html missing or empty"; fi
   if grep -Eq '<script>alert|<img src=x onerror' "$H/report.html"; then bad "hostile markup is not rendered" "raw markup found in report.html"; else ok "hostile markup is not rendered"; fi
   if grep -q 'Launch with limits' "$H/report.html" && grep -q 'No secrets' "$H/report.html"; then ok "web page shows the verdict and the checklist"; else bad "web page shows the verdict and the checklist" "missing"; fi
+  # French and English carry the same labels
+  if PYTHONUTF8=1 $PYTHON -c "import sys; sys.path.insert(0, sys.argv[1]); import audit_report_html as m; sys.exit(0 if set(m.I18N['en']) == set(m.I18N['fr']) else 1)" "$HERE/../scripts"; then ok "French and English have the same labels"; else bad "French and English have the same labels" "keys differ"; fi
+  # Hostile text in the report and in proposed fixes is shown as text
+  H2="$WORK/html-check2"; rm -rf "$H2"; make_report "$H2" launch-with-limits 2 full 0
+  printf '
+[click](javascript:alert(7)) and **bold** and `code`
+
+```
+<script>alert(8)</script>
+```
+' >> "$H2/AUDIT.md"
+  printf '{"fixes":[{"id":"P-1","title":"<img src=x onerror=alert(9)>","who":"claude","change":"<script>alert(10)</script>","why":"<b>x</b>"}]}' > "$H2/fixes.json"
+  PYTHONUTF8=1 $PYTHON "$HERE/../scripts/audit_report_html.py" "$H2" > /dev/null 2>&1
+  bs="$(printf '\')"   # one backslash
+  # The page keeps its data as JSON with "<" written as <, so look for the escaped forms
+  if grep -Fq 'href='"$bs"'"javascript' "$H2/report.html" || grep -Fq '<script>alert' "$H2/report.html" || grep -Fq '<img src=x onerror' "$H2/report.html"; then bad "report and fixes are escaped" "raw or unsafe markup found"; else ok "report and fixes are escaped"; fi
+  if grep -Fq "$bs"'u0026lt;script' "$H2/report.html"; then ok "script text in the report is shown as text"; else bad "script text in the report is shown as text" "escaped form not found"; fi
+  if grep -Fq "$bs"'u003cstrong'"$bs"'u003ebold' "$H2/report.html" && grep -Fq "$bs"'u003ccode'"$bs"'u003ecode' "$H2/report.html"; then ok "the report is shown formatted"; else bad "the report is shown formatted" "no formatting found"; fi
+  if grep -q 'AUDIT_SERVER' "$H2/report.html"; then ok "the page has a place for the local server controls"; else bad "the page has a place for the local server controls" "placeholder missing"; fi
   if grep -Eq 'https?://[^"'"'"' )]*\.(js|css)' "$H/report.html"; then bad "web page needs no internet" "an external file is referenced"; else ok "web page needs no internet"; fi
+fi
+fi
+
+# --- Local server that starts Claude on approved fixes (tests/serve_test.py, with a stand-in for claude)
+if [ $# -eq 0 ] || [ "${1:-}" = "serve-check" ]; then
+echo
+echo "=== serve-check (scripts/audit_serve.py)"
+. "$HERE/../scripts/find-python.sh"
+if ! find_python; then skip "local server (no Python 3.8+ found)"; else
+  while IFS= read -r line; do
+    case "$line" in
+      "OK: "*) ok "server: ${line#OK: }" ;;
+      "BAD: "*) bad "server: ${line#BAD: }" ;;
+    esac
+  done < <(PYTHONUTF8=1 $PYTHON "$HERE/serve_test.py" 2>&1)
 fi
 fi
 

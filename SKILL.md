@@ -166,7 +166,7 @@ Rules:
 
 ## Step 6: Write the report and the history
 
-Load `reviews/release-gate.md` first. Write `audit/<same folder>/AUDIT.md` so that a non-programmer can stop reading after the first section:
+Load `reviews/release-gate.md` first. Write the report in the language the user writes to you (English or French); the web page's own labels switch language by themselves. Write `audit/<same folder>/AUDIT.md` so that a non-programmer can stop reading after the first section:
 
 1. **In plain words** (at most 12 lines, no jargon; explain any unavoidable term in a few words):
    - The **verdict** from the release gate (🔴 Don't launch yet / 🟡 Launch with limits / 🟢 No blocking problems found), the level used, and the mode (quick or full) with the one-line reason.
@@ -197,11 +197,23 @@ Also write `audit/<same folder>/scores.json`:
 
 `rubric` is the version of these scoring rules (2 = with caps); compare scores across audits only when it matches. `verdict` is `dont-launch`, `launch-with-limits` or `no-blocking-problems`; `level` is 1, 2 or 3 from the release gate; `confirmed` counts the findings you confirmed as critical and high in Step 3; `checklist` counts the marks. **Do not judge the verdict yourself.** Write the checklist table in `AUDIT.md` and `scores.json` (with `confirmed`, `level` and `mode`) first, run `bash <skill-dir>/scripts/scan.sh --verdict`, and use the `VERDICT=` and `TEXT=` lines it prints in both files and in the plain-words section. The `REASON=` lines tell you what to put under "Fix these first". `--verify-report` checks that you did. `sources` mirrors the "Tools used" column.
 
-When both files are written, run `bash <skill-dir>/scripts/scan.sh --verify-report`. It checks that `scores.json` is complete, that the verdict is allowed for the level and mode, that the verdict text and checklist marks in `AUDIT.md` match `scores.json`, that every tool listed with a status matches `manifest.tsv`, and that no secret-looking text is in the report. Fix every `FAIL` and run it again before showing the report. Then run `bash <skill-dir>/scripts/scan.sh --report-html` to rebuild the web page (`report.html` in the run folder: verdict, filterable findings, coverage, scores, checklist and the written report in one file, no internet needed) and give the user its path; `scan.sh --open` opens it in their browser. If it can't run, say so in the report.
+Also write `audit/<same folder>/fixes.json`, the proposed fixes in a form the web page can show with a tick box each (the report's "Proposed fixes" section stays too):
+
+```json
+{"fixes": [
+  {"id": "P-1", "finding": "F-ab12cd", "title": "Pin the GitHub Actions to exact commits", "who": "claude", "severity": "medium",
+   "file": ".github/workflows/deploy.yml", "why": "A moved tag could change what runs with your deploy token.",
+   "change": "uses: actions/checkout@<full commit hash> # v7", "verify": "zizmor reports fewer findings", "risk": "low"}
+]}
+```
+
+`id` is `P-1`, `P-2`... `finding` is the stable ID from `findings.tsv` (or `C-001` for a Claude-only finding). `who` is `claude` when Claude can make the change in the project, or `you` when only the owner can (rotate a key, change a dashboard setting, answer a question). Give every `claude` fix a `change` (a small diff or exact steps) and a `verify`. Never put secret values in any field.
+
+When the files are written, run `bash <skill-dir>/scripts/scan.sh --verify-report`. It checks that `scores.json` is complete, that the verdict is allowed for the level and mode, that the verdict text and checklist marks in `AUDIT.md` match `scores.json`, that every tool listed with a status matches `manifest.tsv`, and that no secret-looking text is in the report. Fix every `FAIL` and run it again before showing the report. Then run `bash <skill-dir>/scripts/scan.sh --report-html` to rebuild the web page (`report.html` in the run folder: verdict, filterable findings, coverage, scores, checklist and the written report in one file, no internet needed) and give the user its path; `scan.sh --open` opens it in their browser. If it can't run, say so in the report.
 
 ## Step 7: Act, with permission
 
-Show the plain-words section first (verdict, fix-these-first, what you need to confirm), then the launch checklist counts, the score table exactly as in the report (all five columns, never just dimension and number), the live-site summary if any, the proposed fixes and the refactor plan. Change nothing until the user picks an item. Then:
+Show the plain-words section first (verdict, fix-these-first, what you need to confirm), then the launch checklist counts, the score table exactly as in the report (all five columns, never just dimension and number), the live-site summary if any, the proposed fixes and the refactor plan. Tell the user they can open the screen (`bash <skill-dir>/scripts/scan.sh --serve`, or `--open` for a read-only view), tick the fixes they approve and click "Fix with Claude"; that starts Claude Code on them in a new git branch (one commit per fix, nothing pushed) and writes `fix-report.md` in the run folder. Without the server they can copy the message from the page or download `approved-fixes.json` and paste it to you. If the user hands you such a message or file, apply exactly those fixes, nothing else, and follow the same rules below. Change nothing until the user picks an item. Then:
 - One item at a time, on a git branch if it's a git repo.
 - Run the project's tests if it has any, then re-run Step 2 and report the score change.
 - If a fix turns out wrong, say so and revert it instead of patching around it.

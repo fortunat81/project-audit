@@ -181,6 +181,51 @@ def check_secrets(r, report_path, scores_path):
         r.ok("no secret-looking text in the report")
 
 
+def check_fixes(r, folder):
+    """fixes.json (proposed fixes the web page lets the user approve) must be well formed."""
+    text = read(os.path.join(folder, "fixes.json"))
+    if text is None:
+        r.warn("no fixes.json: the web page cannot offer the proposed fixes for approval")
+        return
+    try:
+        data = json.loads(text)
+    except ValueError:
+        r.fail("fixes.json is not valid JSON")
+        return
+    fixes = data.get("fixes") if isinstance(data, dict) else data
+    if not isinstance(fixes, list) or not fixes:
+        r.fail('fixes.json must be a list of fixes (or {"fixes": [...]})')
+        return
+    known = set()
+    findings = read(os.path.join(folder, "findings.tsv")) or ""
+    for line in findings.splitlines()[1:]:
+        known.add(line.split("	")[0])
+    problems, seen = 0, set()
+    for i, x in enumerate(fixes, 1):
+        if not isinstance(x, dict) or not all(isinstance(x.get(k), str) and x.get(k) for k in ("id", "title", "who")):
+            r.fail("fix %d in fixes.json needs id, title and who (text)" % i)
+            problems += 1
+            continue
+        if x["who"] not in ("claude", "you"):
+            r.fail("fix %s: who must be 'claude' or 'you'" % x["id"])
+            problems += 1
+        if x["id"] in seen:
+            r.fail("fix id %s is used twice" % x["id"])
+            problems += 1
+        seen.add(x["id"])
+        finding = x.get("finding")
+        if finding and not finding.startswith("C-") and known and finding not in known:
+            r.fail("fix %s points at finding %s, which is not in findings.tsv (use the stable ID, or C-001 for a Claude-only finding)" % (x["id"], finding))
+            problems += 1
+        if x["who"] == "claude" and not (x.get("change") and x.get("verify")):
+            r.warn("fix %s has no 'change' or no 'verify' text; Claude will have little to go on" % x["id"])
+        if SECRET_SHAPES.search(json.dumps(x)):
+            r.fail("fix %s contains text shaped like a secret" % x["id"])
+            problems += 1
+    if not problems:
+        r.ok("fixes.json is well formed (%d fixes)" % len(fixes))
+
+
 def main(argv):
     folder = argv[1] if len(argv) > 1 else None
     if not folder:
@@ -212,6 +257,7 @@ def main(argv):
     mode, level, verdict, counts = check_fields(r, scores)
     if report_text is not None:
         check_report(r, scores, report_text, read(os.path.join(folder, "manifest.tsv")), counts, verdict, mode, level)
+    check_fixes(r, folder)
     check_secrets(r, report_path, scores_path)
 
     print()
