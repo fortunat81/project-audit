@@ -10,7 +10,7 @@
 #   bash tests/run-tests.sh --install         first install every missing scanner, then test
 #   KEEP=1 bash tests/run-tests.sh            keep the test projects (in .test-work/) to inspect them
 #
-# Checks: report-check verdict-check html-check serve-check translate-check engine-check core-check detect-check digest-check (see units.sh).
+# Checks: report-check verdict-check html-check serve-check translate-check engine-check core-check detect-check digest-check modes-check (see units.sh).
 # Scenarios: tests/scenarios/<name>/ (see scenario.sh for the folder layout and expected.tsv format).
 # Output is also saved to tests/last-run.txt.
 #

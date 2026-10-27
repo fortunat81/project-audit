@@ -73,24 +73,8 @@ def _dockerfile(ctx, f, lines):
         lines.append("WARN  DOCKER-ROOT: container runs as root: %s" % f)
 
 
-def run(ctx):
-    ctx.dim = "security,quality"
-    lines = []
-    files = [f for f in ctx.source_files() if not FILE_FILTER_OUT.search(f) and FILE_FILTER_IN.search(f)]
-
-    # Debug mode and test accounts left in
-    _check_pattern(ctx, files, lines, "FAIL", "DEBUG-ON", "debug mode switched on, shows internals to visitors", DEBUG_ON)
-    _check_pattern(ctx, files, lines, "WARN", "TEST-ACCOUNT", "test or default login left in the code", TEST_ACCOUNT)
-    # Browser-facing settings
-    _check_pattern(ctx, files, lines, "WARN", "CORS-OPEN", "answers requests from every website (fine only for a public read-only API)", CORS_OPEN)
-    _check_pattern(ctx, files, lines, "WARN", "COOKIE-FLAGS", "session cookie without Secure or HttpOnly", COOKIE_FLAGS)
-
-    # Containers: run as root, unpinned base image
-    dockerfiles = [f for f in ctx.project_files() if DOCKERFILE.search(f) and ctx.isfile(f)]
-    for f in dockerfiles:
-        _dockerfile(ctx, f, lines)
-
-    # Runtimes past end of support (only versions the project pins)
+def _runtimes(ctx, dockerfiles, lines):
+    """Runtimes past end of support (only versions the project pins)."""
     for f in (".nvmrc", ".node-version"):
         if ctx.isfile(f):
             first = (ctx.read(f).splitlines() or [""])[0].replace("v", "").replace(" ", "").replace("\r", "")
@@ -113,7 +97,9 @@ def run(ctx):
         if m:
             _runtime_eol(lines, "python", m.group(1), f)
 
-    # Reproducible installs, tests, automated checks, leaked source maps
+
+def _hygiene(ctx, lines):
+    """Reproducible installs, tests, automated checks, leaked source maps."""
     code_project = ctx.has_trait("node") or ctx.has_trait("python") or ctx.has_trait("dart")
     if ctx.has_trait("node") and not any(ctx.has_trait(t) for t in ("pm-npm", "pm-pnpm", "pm-yarn", "pm-bun")):
         lines.append("WARN  NO-LOCKFILE: no package lockfile, so installs are not repeatable and the dependency audit cannot run")
@@ -125,6 +111,27 @@ def run(ctx):
     maps = [f for f in ctx.project_files() if f.endswith(".map") and not re.search(r"(^|/)node_modules/", f)][:3]
     for f in maps:
         lines.append("WARN  SOURCEMAPS-COMMITTED: source map file in the repo (can reveal your original code if published): %s" % f)
+
+
+def run(ctx):
+    ctx.dim = "security,quality"
+    lines = []
+    files = [f for f in ctx.source_files() if not FILE_FILTER_OUT.search(f) and FILE_FILTER_IN.search(f)]
+
+    # Debug mode and test accounts left in
+    _check_pattern(ctx, files, lines, "FAIL", "DEBUG-ON", "debug mode switched on, shows internals to visitors", DEBUG_ON)
+    _check_pattern(ctx, files, lines, "WARN", "TEST-ACCOUNT", "test or default login left in the code", TEST_ACCOUNT)
+    # Browser-facing settings
+    _check_pattern(ctx, files, lines, "WARN", "CORS-OPEN", "answers requests from every website (fine only for a public read-only API)", CORS_OPEN)
+    _check_pattern(ctx, files, lines, "WARN", "COOKIE-FLAGS", "session cookie without Secure or HttpOnly", COOKIE_FLAGS)
+
+    # Containers: run as root, unpinned base image
+    dockerfiles = [f for f in ctx.project_files() if DOCKERFILE.search(f) and ctx.isfile(f)]
+    for f in dockerfiles:
+        _dockerfile(ctx, f, lines)
+
+    _runtimes(ctx, dockerfiles, lines)
+    _hygiene(ctx, lines)
 
     ctx.write("release-checks.txt", "".join(ln + "\n" for ln in lines))
     ctx.result("release-checks", "release-checks.txt")

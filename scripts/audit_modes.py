@@ -151,62 +151,59 @@ def _audit_runs(ctx):
     return [os.path.join(base, n) for n in names]
 
 
-def status(ctx):
-    """Compares the project now with the last saved audit and recommends quick or full.
-    Thresholds: AUDIT_DAYS (30), AUDIT_COMMITS (50), AUDIT_LINES (3000)."""
-    days_limit = int(os.environ.get("AUDIT_DAYS", "30"))
-    commits_limit = int(os.environ.get("AUDIT_COMMITS", "50"))
-    lines_limit = int(os.environ.get("AUDIT_LINES", "3000"))
-    runs = _audit_runs(ctx)
-    last = runs[-1] if runs else ""
-    prev = runs[-2] if len(runs) > 1 else ""
-    if not last or not os.path.isfile(os.path.join(last, "meta.txt")):
-        print("LAST_AUDIT=none")
-        print("RECOMMEND=full")
-        print("REASON=no previous audit, so this run sets the baseline")
-        return 0
+DEPENDENCY_FILES = ("package.json package-lock.json pnpm-lock.yaml yarn.lock requirements.txt pyproject.toml poetry.lock "
+                    "pubspec.yaml pubspec.lock composer.json composer.lock").split()
+
+
+def _read_meta(folder):
     meta = {}
-    for line in read_text(os.path.join(last, "meta.txt")).splitlines():
+    for line in read_text(os.path.join(folder, "meta.txt")).splitlines():
         k, _, v = line.partition("=")
         meta.setdefault(k, v)
-    last_epoch = int(meta.get("epoch") or time.time())
-    last_commit = meta.get("commit", "")
-    days = int((time.time() - last_epoch) // 86400)
-    commits, lines, deps_changed = "unknown", "unknown", "no"
-    if last_commit and last_commit != "none" and ctx.git("cat-file", "-e", last_commit + "^{commit}")[0] == 0:
-        code, text = ctx.git("rev-list", "--count", last_commit + "..HEAD")
-        commits = text.strip() if code == 0 else "unknown"
-        total = 0
-        for row in ctx.git("diff", "--numstat", last_commit, "--", ".", ":!audit")[1].splitlines():
-            parts = row.split("\t")
-            if len(parts) == 3 and not ctx.noise(parts[2]):
-                total += sum(int(p) for p in parts[:2] if p.isdigit())
-        for f in ctx.git("ls-files", "--others", "--exclude-standard")[1].splitlines():
-            if f and not f.startswith("audit/") and not ctx.noise(f):
-                try:
-                    with open(os.path.join(ctx.root, f), "rb") as fh:
-                        total += fh.read().count(b"\n")
-                except OSError:
-                    pass
-        lines = total
-        dep_files = "package.json package-lock.json pnpm-lock.yaml yarn.lock requirements.txt pyproject.toml poetry.lock pubspec.yaml pubspec.lock composer.json composer.lock".split()
-        if ctx.git("diff", "--name-only", last_commit, "--", *dep_files)[1].strip():
-            deps_changed = "yes"
-    holes = sum(1 for ln in read_text(os.path.join(last, "manifest.tsv")).splitlines()[1:]
-                if len(ln.split("\t")) > 1 and (ln.split("\t")[1].startswith("failed-to-run") or ln.split("\t")[1] == "timeout"))
-    now_traits = " ".join(t for t in ctx.traits if t != "live-url")
-    print("LAST_AUDIT=%s" % meta.get("date", ""))
-    print("LAST_FOLDER=%s" % last.replace("\\", "/"))
-    print("PREV_FOLDER=%s" % prev.replace("\\", "/"))
-    print("DAYS_SINCE=%d" % days)
-    print("COMMITS_SINCE=%s" % commits)
-    print("LINES_CHANGED_SINCE=%s   (committed, staged, unstaged and new files)" % lines)
-    print("DEPENDENCY_FILES_CHANGED=%s" % deps_changed)
-    print("LAST_AUDIT_FAILED_CHECKS=%d" % holes)
+    return meta
+
+
+def _lines_changed(ctx, since):
+    """Lines changed since a commit: committed, staged, unstaged and new files (generated files don't count)."""
+    total = 0
+    for row in ctx.git("diff", "--numstat", since, "--", ".", ":!audit")[1].splitlines():
+        parts = row.split("\t")
+        if len(parts) == 3 and not ctx.noise(parts[2]):
+            total += sum(int(p) for p in parts[:2] if p.isdigit())
+    for f in ctx.git("ls-files", "--others", "--exclude-standard")[1].splitlines():
+        if f and not f.startswith("audit/") and not ctx.noise(f):
+            try:
+                with open(os.path.join(ctx.root, f), "rb") as fh:
+                    total += fh.read().count(b"\n")
+            except OSError:
+                pass
+    return total
+
+
+def _changes_since(ctx, commit):
+    """(commits, lines, dependency files changed) since the last audit's commit; 'unknown' when git can't tell."""
+    if not commit or commit == "none" or ctx.git("cat-file", "-e", commit + "^{commit}")[0] != 0:
+        return "unknown", "unknown", "no"
+    code, text = ctx.git("rev-list", "--count", commit + "..HEAD")
+    deps = "yes" if ctx.git("diff", "--name-only", commit, "--", *DEPENDENCY_FILES)[1].strip() else "no"
+    return (text.strip() if code == 0 else "unknown"), _lines_changed(ctx, commit), deps
+
+
+def _failed_checks(folder):
+    """How many checks in an audit failed to run or timed out (each one left a gap)."""
+    count = 0
+    for ln in read_text(os.path.join(folder, "manifest.tsv")).splitlines()[1:]:
+        cols = ln.split("\t")
+        if len(cols) > 1 and (cols[1].startswith("failed-to-run") or cols[1] == "timeout"):
+            count += 1
+    return count
+
+
+def _reasons(days, commits, lines, deps_changed, holes, profile_changed, limits):
+    """Why a full audit is recommended (an empty list means a quick one is enough). limits = (days, commits, lines)."""
+    days_limit, commits_limit, lines_limit = limits
     reasons = []
-    last_traits = meta.get("traits", "")
-    if last_traits and last_traits != now_traits:
-        print("PROFILE_CHANGED=yes (was: %s)" % last_traits)
+    if profile_changed:
         reasons.append("the project's makeup changed since the last audit (new framework, backend or feature)")
     if deps_changed == "yes":
         reasons.append("dependency files changed since the last audit")
@@ -218,6 +215,38 @@ def status(ctx):
         reasons.append("%s commits since the last audit (limit %d)" % (commits, commits_limit))
     if lines != "unknown" and int(lines) >= lines_limit:
         reasons.append("%s lines changed since the last audit (limit %d)" % (lines, lines_limit))
+    return reasons
+
+
+def status(ctx):
+    """Compares the project now with the last saved audit and recommends quick or full.
+    Thresholds: AUDIT_DAYS (30), AUDIT_COMMITS (50), AUDIT_LINES (3000)."""
+    limits = (int(os.environ.get("AUDIT_DAYS", "30")), int(os.environ.get("AUDIT_COMMITS", "50")), int(os.environ.get("AUDIT_LINES", "3000")))
+    runs = _audit_runs(ctx)
+    last = runs[-1] if runs else ""
+    prev = runs[-2] if len(runs) > 1 else ""
+    if not last or not os.path.isfile(os.path.join(last, "meta.txt")):
+        print("LAST_AUDIT=none")
+        print("RECOMMEND=full")
+        print("REASON=no previous audit, so this run sets the baseline")
+        return 0
+    meta = _read_meta(last)
+    days = int((time.time() - int(meta.get("epoch") or time.time())) // 86400)
+    commits, lines, deps_changed = _changes_since(ctx, meta.get("commit", ""))
+    holes = _failed_checks(last)
+    print("LAST_AUDIT=%s" % meta.get("date", ""))
+    print("LAST_FOLDER=%s" % last.replace("\\", "/"))
+    print("PREV_FOLDER=%s" % prev.replace("\\", "/"))
+    print("DAYS_SINCE=%d" % days)
+    print("COMMITS_SINCE=%s" % commits)
+    print("LINES_CHANGED_SINCE=%s   (committed, staged, unstaged and new files)" % lines)
+    print("DEPENDENCY_FILES_CHANGED=%s" % deps_changed)
+    print("LAST_AUDIT_FAILED_CHECKS=%d" % holes)
+    last_traits = meta.get("traits", "")
+    profile_changed = bool(last_traits) and last_traits != " ".join(t for t in ctx.traits if t != "live-url")
+    if profile_changed:
+        print("PROFILE_CHANGED=yes (was: %s)" % last_traits)
+    reasons = _reasons(days, commits, lines, deps_changed, holes, profile_changed, limits)
     if reasons:
         print("RECOMMEND=full")
         for r in reasons:

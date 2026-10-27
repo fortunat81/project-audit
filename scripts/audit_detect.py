@@ -37,45 +37,42 @@ def _pub_has(text, name):
     return re.search(r"^\s+%s\s*:" % re.escape(name), text, re.M) is not None
 
 
+# package names in package.json that switch on a trait (a name matches as a whole key; see _pkg_has)
+JS_TRAITS = (
+    ("expo", ("expo",)), ("react-native", ("react-native",)), ("next", ("next",)), ("astro", ("astro",)), ("vite", ("vite",)),
+    ("nuxt", ("nuxt",)), ("vue", ("vue",)), ("svelte", ("svelte", "@sveltejs/kit")), ("react", ("react",)),
+    ("server-framework", ("express", "fastify", "hono", "koa", "@nestjs/core")),
+    ("ai", ("openai", "@anthropic-ai/sdk", "ai", "@google/generative-ai", "@google/genai", "groq-sdk", "cohere-ai", "replicate", "ollama",
+            "@mistralai/mistralai", "langchain")),
+    ("payments", ("stripe", "@stripe/stripe-js", "@stripe/stripe-react-native", "@paypal/react-paypal-js", "square")),
+    ("supabase", ("@supabase/supabase-js",)),
+    ("firebase", ("firebase", "firebase-admin", "@react-native-firebase/app")),
+)
+JS_PREFIX_TRAITS = (("remix", "@remix-run/"), ("ai", "@ai-sdk/"), ("ai", "@langchain/"))
+# a lock file or config file that tells the package manager / project shape
+JS_FILE_TRAITS = (
+    ("pm-npm", ("package-lock.json", "npm-shrinkwrap.json")), ("pm-pnpm", ("pnpm-lock.yaml",)), ("pm-yarn", ("yarn.lock",)),
+    ("pm-bun", ("bun.lockb", "bun.lock")), ("typescript", ("tsconfig.json",)),
+    ("monorepo", ("pnpm-workspace.yaml", "turbo.json", "nx.json", "lerna.json")),
+)
+
+
 def _javascript(ctx):
     if not ctx.isfile("package.json"):
         return
     pkg = ctx.read("package.json")
     ctx.add_trait("node")
-    if ctx.isfile("package-lock.json") or ctx.isfile("npm-shrinkwrap.json"):
-        ctx.add_trait("pm-npm")
-    if ctx.isfile("pnpm-lock.yaml"):
-        ctx.add_trait("pm-pnpm")
-    if ctx.isfile("yarn.lock"):
-        ctx.add_trait("pm-yarn")
-    if ctx.isfile("bun.lockb") or ctx.isfile("bun.lock"):
-        ctx.add_trait("pm-bun")
-    if ctx.isfile("tsconfig.json"):
-        ctx.add_trait("typescript")
-    if any(ctx.isfile(f) for f in ("pnpm-workspace.yaml", "turbo.json", "nx.json", "lerna.json")) or '"workspaces"' in pkg:
-        ctx.add_trait("monorepo")
-    for name, trait in (("expo", "expo"), ("react-native", "react-native"), ("next", "next"), ("astro", "astro"), ("vite", "vite"),
-                        ("nuxt", "nuxt"), ("vue", "vue")):
-        if _pkg_has(pkg, name):
+    for trait, files in JS_FILE_TRAITS:
+        if any(ctx.isfile(f) for f in files):
             ctx.add_trait(trait)
-    if _pkg_has(pkg, "svelte") or _pkg_has(pkg, "@sveltejs/kit"):
-        ctx.add_trait("svelte")
-    if _pkg_has_prefix(pkg, "@remix-run/"):
-        ctx.add_trait("remix")
-    if _pkg_has(pkg, "react"):
-        ctx.add_trait("react")
-    if any(_pkg_has(pkg, s) for s in ("express", "fastify", "hono", "koa", "@nestjs/core")):
-        ctx.add_trait("server-framework")
-    ai = ("openai", "@anthropic-ai/sdk", "ai", "@google/generative-ai", "@google/genai", "groq-sdk", "cohere-ai", "replicate", "ollama",
-          "@mistralai/mistralai", "langchain")
-    if any(_pkg_has(pkg, s) for s in ai) or _pkg_has_prefix(pkg, "@ai-sdk/") or _pkg_has_prefix(pkg, "@langchain/"):
-        ctx.add_trait("ai")
-    if any(_pkg_has(pkg, s) for s in ("stripe", "@stripe/stripe-js", "@stripe/stripe-react-native", "@paypal/react-paypal-js", "square")):
-        ctx.add_trait("payments")
-    if _pkg_has(pkg, "@supabase/supabase-js"):
-        ctx.add_trait("supabase")
-    if any(_pkg_has(pkg, s) for s in ("firebase", "firebase-admin", "@react-native-firebase/app")):
-        ctx.add_trait("firebase")
+    if '"workspaces"' in pkg:
+        ctx.add_trait("monorepo")
+    for trait, names in JS_TRAITS:
+        if any(_pkg_has(pkg, n) for n in names):
+            ctx.add_trait(trait)
+    for trait, prefix in JS_PREFIX_TRAITS:
+        if _pkg_has_prefix(pkg, prefix):
+            ctx.add_trait(trait)
 
 
 def _python(ctx):
@@ -124,37 +121,37 @@ def _ai_through_http(ctx):
             return
 
 
-def detect(ctx, audit_url):
-    if ctx.is_git():
-        ctx.add_trait("git")
-    _javascript(ctx)
-    _python(ctx)
-    _dart(ctx)
+def _isdir(ctx, *parts):
+    return os.path.isdir(os.path.join(ctx.root, *parts))
 
-    # PHP / WordPress
+
+def _php(ctx):
     if ctx.isfile("composer.json") or any(f.endswith(".php") for f in ctx.project_files()):
         ctx.add_trait("php")
         if ctx.isfile("wp-config.php") or ctx.exists("wp-content"):
             ctx.add_trait("wordpress")
 
-    # Backends configured by files rather than packages
-    if ctx.exists("supabase") and os.path.isdir(os.path.join(ctx.root, "supabase")):
+
+def _backends_from_files(ctx):
+    """Backends configured by files rather than packages."""
+    if _isdir(ctx, "supabase"):
         ctx.add_trait("supabase")
     if any(ctx.isfile(f) for f in ("firebase.json", "firestore.rules", "database.rules.json", "storage.rules")):
         ctx.add_trait("firebase")
 
-    _ai_through_http(ctx)
 
-    # Native mobile code that is really yours (Expo and Flutter generate android/ and ios/)
+def _mobile(ctx):
+    """Native mobile code that is really yours (Expo and Flutter generate android/ and ios/)."""
     if not ctx.has_trait("expo") and not ctx.has_trait("flutter"):
-        if os.path.isdir(os.path.join(ctx.root, "android")) and ctx.any_file("android/build.gradle*", "android/app/build.gradle*"):
+        if _isdir(ctx, "android") and ctx.any_file("android/build.gradle*", "android/app/build.gradle*"):
             ctx.add_trait("native-android")
         if ctx.any_file("*.xcodeproj", "ios/*.xcodeproj", "Podfile", "ios/Podfile"):
             ctx.add_trait("native-ios")
     if any(ctx.has_trait(t) for t in ("expo", "react-native", "flutter", "native-android", "native-ios")):
         ctx.add_trait("mobile")
 
-    # Websites
+
+def _web(ctx):
     if not ctx.has_trait("node") and (ctx.isfile("index.html") or ctx.isfile("public", "index.html")):
         ctx.add_trait("static-site")
     if any(ctx.has_trait(t) for t in ("next", "astro", "vite", "nuxt", "vue", "svelte", "remix", "static-site", "wordpress")):
@@ -162,25 +159,33 @@ def detect(ctx, audit_url):
     if ctx.has_trait("react") and not ctx.has_trait("react-native") and not ctx.has_trait("expo"):
         ctx.add_trait("web")
 
-    # Code that runs on a server (API routes, serverless functions, backend frameworks)
-    if ctx.has_trait("server-framework"):
-        ctx.add_trait("server-code")
-    if ctx.has_trait("next") and any(os.path.isdir(os.path.join(ctx.root, d)) for d in ("app/api", "src/app/api", "pages/api", "src/pages/api")):
-        ctx.add_trait("server-code")
-    if (os.path.isdir(os.path.join(ctx.root, "supabase", "functions")) or ctx.isfile("functions", "package.json")
-            or os.path.isdir(os.path.join(ctx.root, "netlify", "functions")) or os.path.isdir(os.path.join(ctx.root, "api"))):
-        ctx.add_trait("server-code")
-    if ctx.has_trait("php"):
+
+def _server_code(ctx):
+    """Code that runs on a server (API routes, serverless functions, backend frameworks)."""
+    next_api = ctx.has_trait("next") and any(_isdir(ctx, d) for d in ("app/api", "src/app/api", "pages/api", "src/pages/api"))
+    functions = _isdir(ctx, "supabase", "functions") or ctx.isfile("functions", "package.json") or _isdir(ctx, "netlify", "functions") or _isdir(ctx, "api")
+    if ctx.has_trait("server-framework") or next_api or functions or ctx.has_trait("php"):
         ctx.add_trait("server-code")
 
-    # Other
+
+def detect(ctx, audit_url):
+    if ctx.is_git():
+        ctx.add_trait("git")
+    _javascript(ctx)
+    _python(ctx)
+    _dart(ctx)
+    _php(ctx)
+    _backends_from_files(ctx)
+    _ai_through_http(ctx)
+    _mobile(ctx)
+    _web(ctx)
+    _server_code(ctx)
     if ctx.any_file(".github/workflows/*.yml", ".github/workflows/*.yaml"):
         ctx.add_trait("ci-github")
     if ctx.any_file("Dockerfile", "*/Dockerfile", "docker-compose*.yml", "compose*.yml"):
         ctx.add_trait("docker")
     if audit_url:
         ctx.add_trait("live-url")
-
     _languages(ctx)
     _finish(ctx)
 
