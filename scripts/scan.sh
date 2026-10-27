@@ -548,6 +548,38 @@ printf "tool\tstatus\texit\toutput\tdimension\n" > "$MANIFEST"
   fi
 } > "$OUT/meta.txt"
 
+# --- Provenance: what exactly was audited, with which settings, and did it stay the same? ---
+# hash_stdin prints a short hash of whatever it reads (whichever hash tool this machine has).
+hash_stdin() {
+  if has sha1sum; then sha1sum | cut -c1-12
+  elif has shasum; then shasum | cut -c1-12
+  elif has md5sum; then md5sum | cut -c1-12
+  elif has md5; then md5 | cut -c1-12
+  else cksum | tr ' ' '-'; fi
+}
+# A fingerprint of the project files as they are right now (commit, edits, new files and their sizes).
+# The audit's own folder is left out.
+fingerprint() {
+  {
+    if is_git; then
+      git rev-parse HEAD 2>/dev/null
+      git diff HEAD -- . ':!audit' 2>/dev/null
+      git ls-files --others --exclude-standard 2>/dev/null | grep -v '^audit/' | while IFS= read -r f; do [ -f "$f" ] && printf '%s %s
+' "$f" "$(wc -c < "$f" | tr -d ' ')"; done
+    else
+      find . -type f -not -path './audit/*' -not -path '*/node_modules/*' -not -path './.git/*' 2>/dev/null | head -5000 | sort | while IFS= read -r f; do printf '%s %s
+' "$f" "$(wc -c < "$f" | tr -d ' ')"; done
+    fi
+  } | hash_stdin
+}
+{
+  echo "fingerprint_start=$(fingerprint)"
+  echo "methodology_commit=$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  echo "settings_hash=$({ cat "$SCRIPT_DIR/gitleaks-extra.toml" "$ROOT/.audit.conf" 2>/dev/null; echo "semgrep_config=p/default"; } | hash_stdin)"
+  echo "semgrep_rules=p/default, downloaded at scan time (not pinned): results can change when the rules are updated"
+  echo "os=$(uname -s 2>/dev/null) $(uname -m 2>/dev/null)"
+} >> "$OUT/meta.txt"
+
 TO="$(timeout_prefix 300)"
 
 # DIM is the score dimension the next rows feed; modules set it before each run.
@@ -665,6 +697,16 @@ for f in $(module_files); do
 done
 echo "modules_run=${APPLIED# }" >> "$OUT/meta.txt"
 echo "modules_not_applicable=${NOT_APPLIED# }" >> "$OUT/meta.txt"
+
+# Did the project change while the scanners were running? Then the results may mix two versions.
+FP_START="$(grep '^fingerprint_start=' "$OUT/meta.txt" | cut -d= -f2-)"; FP_END="$(fingerprint)"
+echo "fingerprint_end=$FP_END" >> "$OUT/meta.txt"
+if [ "$FP_START" = "$FP_END" ]; then echo "consistent=yes" >> "$OUT/meta.txt"
+else
+  echo "consistent=no" >> "$OUT/meta.txt"
+  DIM="general"; record consistency "partial: project files changed while the scan was running, so results may mix two versions (run the scan again)" "-" "-"
+fi
+if is_git; then echo "commit_end=$(git rev-parse --verify -q HEAD || echo none)" >> "$OUT/meta.txt"; fi
 
 echo "$OUT" > "$ROOT/audit/latest.txt"
 

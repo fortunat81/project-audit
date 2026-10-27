@@ -8,3 +8,7 @@ env-files	clean	-	-
 madge-circular	ran	-	-
 biggest-files	done	src/index\.js	-
 semgrep-coverage	clean	-	-
+@meta	consistent=yes
+@meta	fingerprint_start=[0-9a-f-]+
+@meta	methodology_commit=
+@meta	settings_hash=

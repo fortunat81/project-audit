@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Stand-in for a tool that is still running when the project is edited: adds a new file, then runs the real tool.
+echo "edited while the scan ran" >> "$PWD/edited-during-scan.txt"
+PATH="${PATH#"$SHIM_DIR":}"
+exec gitleaks "$@"

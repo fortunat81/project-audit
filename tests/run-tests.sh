@@ -71,6 +71,10 @@ for name in $SCENARIOS; do
     git config commit.gpgsign false
     git add -A && git commit -qm "initial" --allow-empty
     [ -f "$src/setup.sh" ] && bash "$src/setup.sh"
+    if [ -d "$src/bin" ]; then   # stand-in commands that go first on PATH (for example one that edits the project mid-scan)
+      mkdir -p "$WORK/.shim-$name"; cp -R "$src/bin/." "$WORK/.shim-$name/"; chmod +x "$WORK/.shim-$name/"* 2>/dev/null
+      PATH="$WORK/.shim-$name:$PATH"; export SHIM_DIR="$WORK/.shim-$name"
+    fi
     AUDIT_NO_FETCH=1 bash "$SCAN" $(cat "$src/scan-args" 2>/dev/null) > "$WORK/$name.log" 2>&1
   )
   if [ ! -f "$dest/audit/latest.txt" ]; then
@@ -95,6 +99,8 @@ for name in $SCENARIOS; do
         for t in $want; do if [ -e "$dest/$t" ]; then ok "file exists: $t"; else bad "file exists: $t" "not found in the test project"; fi; done; continue ;;
       @no-file)    # a file that must NOT exist (for example a marker the project would write if the scan ran its code)
         for t in $want; do if [ -e "$dest/$t" ]; then bad "file absent: $t" "the scan ran code from the project"; else ok "file absent: $t"; fi; done; continue ;;
+      @meta)       # a line the run's meta.txt must contain
+        if grep -Eq "$want" "$OUT/meta.txt"; then ok "meta: $want"; else bad "meta: $want" "not in meta.txt"; fi; continue ;;
       @coverage)
         if grep -Eq "$want" "$OUT/coverage.txt"; then ok "coverage note: $want"; else bad "coverage note: $want" "$(tr '\n' ' ' < "$OUT/coverage.txt")"; fi
         continue ;;

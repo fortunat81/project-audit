@@ -1,0 +1,3 @@
+# A project edited while the scan runs must be marked inconsistent.
+@meta	consistent=no
+consistency	partial.*changed while	-	-
