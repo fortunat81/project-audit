@@ -2,6 +2,7 @@
 """Tests for small pure helpers: the live-site header and address rules, the Markdown renderer behind the
 report page, and the digest text. Prints 'OK: label' or 'BAD: label | detail' per check."""
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -90,6 +91,17 @@ def coverage():
     say(len(lines) == 1, "a fully clean run has just the one line", lines)
 
 
+def _git(cwd, *args):
+    return subprocess.run(["git"] + list(args), cwd=cwd, capture_output=True, text=True)
+
+
+def _commit_file(repo, name, text):
+    with open(os.path.join(repo, name), "w", newline="\n") as f:
+        f.write(text)
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "change " + name)
+
+
 def severity_matches_checklists():
     """The scan's own severity must agree with the Supabase checklist (reviews/supabase.md):
     a table with no row-level security is critical, an open write policy is high."""
@@ -111,9 +123,39 @@ def severity_matches_checklists():
     say(sev.get(("REVIEW open policy", "supabase/migrations/003.sql")) == "high", "when one file has a read policy and a write policy, the file is high", sev)
 
 
+def tool_copy_freshness():
+    """A copy of the audit tool that is old or has no history must say so (an old copy once ran silently)."""
+    old = os.environ.pop("AUDIT_NO_FETCH", None)
+    try:
+        plain = tempfile.mkdtemp(prefix="plaincopy")
+        state, text = audit_scan.tool_copy_state(plain)
+        say(state == "no-git" and "git" in text.lower(), "a copy of the tool without git history is reported as unable to tell if it is current", (state, text))
+
+        origin = tempfile.mkdtemp(prefix="origin")
+        _git(origin, "init", "-q")
+        _commit_file(origin, "a.txt", "one\n")
+        base = tempfile.mkdtemp(prefix="clone")
+        clone = os.path.join(base, "tool")
+        _git(base, "clone", "-q", origin, clone)
+        state, text = audit_scan.tool_copy_state(clone)
+        say(state == "current" and text == "", "an up-to-date copy gives no warning", (state, text))
+        _commit_file(origin, "b.txt", "two\n")
+        state, text = audit_scan.tool_copy_state(clone)
+        say(state == "behind" and "1 " in text and "git pull" in text, "a copy that is one commit behind says so and how to update", (state, text))
+        solo = tempfile.mkdtemp(prefix="solo")
+        _git(solo, "init", "-q")
+        _commit_file(solo, "a.txt", "one\n")
+        state, text = audit_scan.tool_copy_state(solo)
+        say(state == "unknown" and text == "", "a git copy with no GitHub address gives no warning", (state, text))
+    finally:
+        if old is not None:
+            os.environ["AUDIT_NO_FETCH"] = old
+
+
 if __name__ == "__main__":
     live_site()
     markdown()
     digest()
     coverage()
     severity_matches_checklists()
+    tool_copy_freshness()

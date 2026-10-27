@@ -67,6 +67,32 @@ def detect_project(ctx):
     audit_detect.find_subprojects(ctx)
 
 
+def tool_copy_state(tool_dir):
+    """Is this copy of the audit tool current? Returns (state, warning). States: current, behind, no-git (a plain copy
+    with no history, so nobody can tell), unknown (no GitHub address or no answer). Only behind and no-git carry a
+    warning. Fetches from GitHub unless AUDIT_NO_FETCH=1. An old copy used to run silently and give weaker results."""
+    if not os.path.exists(os.path.join(tool_dir, ".git")):
+        return "no-git", ("WARNING: this copy of the audit tool has no git history, so it cannot tell whether it is out of date. "
+                          "Replace it with a fresh clone (git clone https://github.com/fortunat81/project-audit) so you get the current checks.")
+
+    def git(*args):
+        r = subprocess.run(["git", "-C", tool_dir] + list(args), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30)
+        return r.returncode, r.stdout.decode("utf-8", "replace").strip()
+    try:
+        if git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")[0] != 0:
+            return "unknown", ""
+        if os.environ.get("AUDIT_NO_FETCH") != "1":
+            git("fetch", "--quiet")
+        code, counts = git("rev-list", "--left-right", "--count", "HEAD...@{u}")
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown", ""
+    behind = int((counts.split() + ["0", "0"])[1]) if code == 0 else 0
+    if behind > 0:
+        return "behind", ("WARNING: this copy of the audit tool is %d commit(s) behind GitHub, so it may miss newer checks. "
+                          "Update it: cd %s && git pull" % (behind, tool_dir.replace("\\", "/")))
+    return "current", ""
+
+
 def _git_meta(ctx):
     """Meta lines about the repository (empty set of facts outside git)."""
     if not ctx.is_git():
@@ -80,8 +106,17 @@ def _git_meta(ctx):
             "audit_folder_ignored=%s" % ("yes" if ctx.git("check-ignore", "-q", "audit/")[0] == 0 else "no")]
 
 
+def _report_tool_copy(ctx):
+    """Warn (and record in meta.txt) when this copy of the audit tool is old or cannot tell."""
+    state, warning = tool_copy_state(os.path.dirname(HERE))
+    ctx.meta("tool_copy=%s" % state)
+    if warning:
+        print(warning)
+
+
 def _write_provenance(ctx):
     """What exactly was audited, with which settings, and did it stay the same?"""
+    _report_tool_copy(ctx)
     settings = read_text(os.path.join(HERE, "gitleaks-extra.toml")) + read_text(os.path.join(ctx.root, ".audit.conf")) + "semgrep_config=p/default\n"
     describe = subprocess.run(["git", "-C", HERE, "rev-parse", "--short", "HEAD"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     ctx.meta("fingerprint_start=%s" % ctx.fingerprint())
