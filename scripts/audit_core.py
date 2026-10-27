@@ -446,6 +446,12 @@ class Ctx:
             return self.py_install_cmd(tool)
         if tool in ("pip-audit", "lizard", "mobsfscan"):
             return self.py_install_cmd(tool)
+        if tool == "git":
+            if is_windows() and self.has("winget"):
+                return "winget install -e --id Git.Git"
+            if self.has("brew"):
+                return "brew install git"
+            return "install Git from https://git-scm.com/downloads (on Linux, with your package manager, for example: apt install git)"
         return {
             "npx": "install Node.js from https://nodejs.org (it provides npm and npx)",
             "flutter": "install the Flutter SDK from https://docs.flutter.dev/get-started/install",

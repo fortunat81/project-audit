@@ -120,7 +120,7 @@ def main():
         say(audit_core.json_looking(p) == want, "json_looking(%r) is %s" % (text, want))
 
     # the install hints exist for every tool a module can ask for
-    for name in ("semgrep", "gitleaks", "osv-scanner", "ruff", "zizmor", "pip-audit", "lizard", "mobsfscan", "npx", "flutter", "dart", "curl"):
+    for name in ("semgrep", "gitleaks", "osv-scanner", "ruff", "zizmor", "pip-audit", "lizard", "mobsfscan", "npx", "flutter", "dart", "curl", "git"):
         say(bool(ctx.install_hint(name)), "there is an install hint for %s" % name)
 
     # untrusted mode removes secret-looking variables and keeps the audit's own settings

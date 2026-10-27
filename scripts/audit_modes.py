@@ -14,7 +14,7 @@ from audit_core import read_text
 
 def _tools_needed(ctx):
     """Every tool the applicable modules need, in order, without repeats."""
-    seen, out = set(), []
+    seen, out = {"git"}, ["git"]  # git comes first: without it the version, status and history checks have nothing to read
     for name, mod, err in load_modules():
         if mod is not None and mod.applies(ctx) and hasattr(mod, "tools"):
             for tool in mod.tools(ctx):

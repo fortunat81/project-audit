@@ -27,6 +27,8 @@ bash <skill-dir>/scripts/scan.sh --check
 
 It prints the detected `PROFILE`, then one line per tool the applicable modules need: `OK`, `MISSING` (with the exact install command), or `USER-SKIPPED`. It installs and scans nothing.
 
+- If the script prints `MISSING python` (no Python 3.8+), it cannot run at all: ask the same way whether to install it, using the `INSTALL-COMMAND` line, and run that one command only on a yes. Windows: if winget asks to accept terms, don't accept for the user (tell them to run that command once in PowerShell), and a new terminal is needed afterwards. Never use `sudo`; on Linux give the package-manager command to the user.
+- `git` is listed first. If it is `MISSING`, offer its install command like any other tool; without git the version, status and history checks have nothing to read, and the audit says so.
 - If nothing is `MISSING`, go to Step 1.
 - If something is `MISSING`, ask before doing anything. Use AskUserQuestion with one multi-select question, "Install these missing scanners?", one option per missing tool with its exact install command in the option's description. Unselected tools are skipped for this run. If AskUserQuestion isn't available, ask in plain text.
 - Install only what the user selected, with `bash <skill-dir>/scripts/scan.sh --install <tool> <tool> ...` (it runs the same commands `--check` printed, one at a time, and prints a summary). Never use `sudo`. Never install anything unselected. The user can also install everything this project needs themselves with `bash <skill-dir>/scripts/scan.sh --install`.
