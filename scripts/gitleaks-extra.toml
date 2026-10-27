@@ -1,0 +1,23 @@
+# Extra gitleaks rule, added on top of gitleaks' own rules (project-audit passes this with --config).
+# gitleaks recognises known key formats and skips values that look too regular, so plain
+# "SOME_SECRET=value" lines (in a notes file, a copied .env, a script) are often missed.
+# Reports show the file and line only; the scan redacts the value.
+title = "project-audit extra rules"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "env-style-secret"
+description = "A NAME=value line whose name says it is a secret"
+regex = '''(?im)^[ \t]*(?:export[ \t]+)?[A-Z0-9_]*(?:SECRET|TOKEN|API_?KEY|PASSWORD|PASSWD|PRIVATE_?KEY|ACCESS_?KEY)[A-Z0-9_]*[ \t]*[=:][ \t]*["']?([A-Za-z0-9_\-./+=]{16,})["']?[ \t]*$'''
+secretGroup = 1
+entropy = 3.0
+keywords = ["secret", "token", "key", "password", "passwd"]
+
+[rules.allowlist]
+# Example and template files hold placeholders on purpose
+paths = ['''(?i)\.(example|sample|template|dist|defaults)$''']
+# Placeholder words, and values that are just a word or a dotted name (code like TOKEN = settings.token)
+stopwords = ["example", "your_", "your-", "changeme", "placeholder", "xxxxx", "replace_me", "replace-me", "dummy", "todo"]
+regexes = ['''^[A-Za-z_.\-]+$''']

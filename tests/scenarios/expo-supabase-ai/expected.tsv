@@ -19,3 +19,5 @@ knip	^skipped: dependencies not installed	-	-
 firebase-rules	absent	-	-
 zizmor	absent	-	-
 live-site	absent	-	-
+gitleaks	findings	env-style-secret	"File":"[^"]*\.env\.example
+gitleaks-uncommitted	findings	env-style-secret	-

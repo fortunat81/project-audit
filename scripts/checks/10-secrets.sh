@@ -12,18 +12,20 @@ mod_run() {
     return
   fi
   note_version gitleaks "$(gitleaks version 2>/dev/null | head -1)"
+  # gitleaks' own rules plus one for NAME=value secrets (scripts/gitleaks-extra.toml)
+  local CFG="$SCRIPT_DIR/gitleaks-extra.toml"
 
   if ! is_git; then
     # No history to read: scan the folder as it is.
     run --json --stdout gitleaks.stdout gitleaks gitleaks.json \
-      gitleaks detect --no-git --source . --redact --report-format json --report-path "$OUT/gitleaks.json" --no-banner
+      gitleaks detect --no-git --source . --config "$CFG" --redact --report-format json --report-path "$OUT/gitleaks.json" --no-banner
     record gitleaks-uncommitted "skipped: not a git repo (the folder scan above covers all files)" "-" "-"
     return
   fi
 
   # 1. Every commit in history
   run --json --stdout gitleaks.stdout gitleaks gitleaks.json \
-    gitleaks detect --source . --redact --report-format json --report-path "$OUT/gitleaks.json" --no-banner
+    gitleaks detect --source . --config "$CFG" --redact --report-format json --report-path "$OUT/gitleaks.json" --no-banner
 
   # 2. Staged, unstaged and brand-new files (a history scan can't see them)
   local UNC f
@@ -44,8 +46,8 @@ mod_run() {
   done
   if [ -n "$(find "$UNC" -type f 2>/dev/null | head -1)" ]; then
     run --json --stdout gitleaks-uncommitted.stdout gitleaks-uncommitted gitleaks-uncommitted.json bash -c \
-      'cd "$1" && gitleaks detect --no-git --source . --redact --report-format json --report-path "$2" --no-banner' \
-      _ "$UNC" "$OUT/gitleaks-uncommitted.json"
+      'cd "$1" && gitleaks detect --no-git --source . --config "$3" --redact --report-format json --report-path "$2" --no-banner' \
+      _ "$UNC" "$OUT/gitleaks-uncommitted.json" "$CFG"
   else
     record gitleaks-uncommitted "clean" "-" "-"
   fi
