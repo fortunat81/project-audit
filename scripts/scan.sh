@@ -7,6 +7,7 @@
 #   bash scan.sh                  run the scan
 #   bash scan.sh --detect         show what was detected and which modules apply (changes nothing)
 #   bash scan.sh --projects       list project folders (this one and any in subfolders); audit each (changes nothing)
+#   bash scan.sh --verify-report  check the finished AUDIT.md and scores.json for mistakes (changes nothing)
 #   bash scan.sh --check          list missing tools and how to install them (changes nothing)
 #   bash scan.sh --install        install the missing tools this project needs (see below)
 #   bash scan.sh --install-deps   install this project's own packages (no install scripts) so tsc/eslint/knip can run
@@ -301,6 +302,10 @@ if [ "${1:-}" = "--projects" ]; then
   for d in $SUBPROJECTS; do echo "PROJECT=$d"; done
   [ "$ROOT_IS_PROJECT" = no ] && [ -z "$SUBPROJECTS" ] && echo "PROJECT=. (no project files found; only the general checks apply)"
   exit 0
+fi
+
+if [ "${1:-}" = "--verify-report" ]; then
+  shift; exec bash "$SCRIPT_DIR/verify-report.sh" "$@"   # checks AUDIT.md and scores.json; changes nothing
 fi
 
 # --- Check mode --------------------------------------------------------------

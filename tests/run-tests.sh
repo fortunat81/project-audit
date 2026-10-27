@@ -55,6 +55,7 @@ fi
 if [ $# -gt 0 ]; then SCENARIOS="$*"; else SCENARIOS="$(ls "$HERE/scenarios")"; fi
 
 for name in $SCENARIOS; do
+  [ "$name" = "report-check" ] && continue   # handled after the scenarios
   src="$HERE/scenarios/$name"
   [ -d "$src" ] || { echo "No such scenario: $name"; FAIL=$((FAIL+1)); continue; }
   dest="$WORK/$name"
@@ -125,6 +126,56 @@ for name in $SCENARIOS; do
     ok "$label"
   done < "$src/expected.tsv"
 done
+
+# --- Report checker: a good report passes, each kind of mistake is caught
+if [ $# -eq 0 ] || [ "${1:-}" = "report-check" ]; then
+echo
+echo "=== report-check (scripts/verify-report.sh)"
+VR="$HERE/../scripts/verify-report.sh"
+make_report() {   # make_report <dir> <verdict> <level> <mode> <fail-count>   (a fresh, correct report)
+  local d="$1"; mkdir -p "$d"
+  printf 'tool	status	exit	output	dimension
+semgrep	findings	0	s.json	security
+gitleaks	clean	0	g.json	security
+' > "$d/manifest.tsv"
+  local mark="✅"; [ "$5" -gt 0 ] && mark="❌"
+  printf "# Audit
+
+Verdict: Launch with limits
+
+| 1 | No secrets | %s | T | gitleaks clean |
+| 2 | Backups | ❓ | Y | not answered |
+
+| Security | 70 | medium | semgrep (findings), gitleaks (clean) | ok |
+" "$mark" > "$d/AUDIT.md"
+  printf '{"date":"2026-01-01","mode":"%s","rubric":2,"level":%s,"verdict":"%s","checklist":{"pass":%s,"fail":%s,"partial":0,"not_verified":1,"not_applicable":0},"scores":{"architecture":80,"modularity":80,"spaghettiness":80,"security":70,"quality":80,"scalability":null,"documentation":60}}'     "$4" "$3" "$2" "$([ "$5" -gt 0 ] && echo 0 || echo 1)" "$5" > "$d/scores.json"
+}
+expect_report() {   # expect_report <label> <dir> <ok|fail>
+  if bash "$VR" "$2" >"$2/verify.out" 2>&1; then got=ok; else got=fail; fi
+  if [ "$got" = "$3" ]; then ok "report-check: $1"; else bad "report-check: $1" "expected $3, got $got: $(grep -E '^(FAIL|WARN)' "$2/verify.out" | head -3 | tr '
+' ' ')"; fi
+}
+RC="$WORK/report-check"; rm -rf "$RC"
+make_report "$RC/good" launch-with-limits 2 full 0;             expect_report "a correct report passes" "$RC/good" ok
+make_report "$RC/note" launch-with-limits 2 full 0; sed -i 's/semgrep (findings)/semgrep (findings, see note)/' "$RC/note/AUDIT.md"
+expect_report "a status followed by a note is read correctly" "$RC/note" ok
+make_report "$RC/counts" launch-with-limits 2 full 0; sed -i 's/"pass":1/"pass":3/' "$RC/counts/scores.json"
+expect_report "marks that differ from scores.json are caught" "$RC/counts" fail
+make_report "$RC/status" launch-with-limits 2 full 0; sed -i 's/gitleaks (clean)/gitleaks (findings)/' "$RC/status/AUDIT.md"
+expect_report "a tool status that differs from the manifest is caught" "$RC/status" fail
+make_report "$RC/ghost" launch-with-limits 2 full 0; printf '| Quality | 80 | low | madge (clean) | x |
+' >> "$RC/ghost/AUDIT.md"
+expect_report "a tool that never ran listed as a source is caught" "$RC/ghost" fail
+make_report "$RC/secret" launch-with-limits 2 full 0; printf 'token ghp_%s
+' "$(rand_alnum 36)" >> "$RC/secret/AUDIT.md"
+expect_report "a secret-looking value in the report is caught" "$RC/secret" fail
+make_report "$RC/green3" no-blocking-problems 3 full 0; sed -i 's/Launch with limits/No blocking problems found/' "$RC/green3/AUDIT.md"
+expect_report "a green verdict at Level 3 is caught" "$RC/green3" fail
+make_report "$RC/greenfail" no-blocking-problems 1 full 1; sed -i 's/Launch with limits/No blocking problems found/' "$RC/greenfail/AUDIT.md"
+expect_report "a green verdict with a failed item is caught" "$RC/greenfail" fail
+make_report "$RC/phrase" launch-with-limits 2 full 0; sed -i 's/Launch with limits/Looks fine/' "$RC/phrase/AUDIT.md"
+expect_report "a report that does not state the verdict is caught" "$RC/phrase" fail
+fi
 
 echo
 echo "RESULT: $PASS passed, $FAIL failed, $UNTESTED untested (tool not installed)"

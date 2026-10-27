@@ -197,6 +197,8 @@ Also write `audit/<same folder>/scores.json`:
 
 `rubric` is the version of these scoring rules (2 = with caps); compare scores across audits only when it matches. `verdict` is `dont-launch`, `launch-with-limits` or `no-blocking-problems`; `level` is 1, 2 or 3 from the release gate; `checklist` counts the marks. `sources` mirrors the "Tools used" column.
 
+When both files are written, run `bash <skill-dir>/scripts/scan.sh --verify-report`. It checks that `scores.json` is complete, that the verdict is allowed for the level and mode, that the verdict text and checklist marks in `AUDIT.md` match `scores.json`, that every tool listed with a status matches `manifest.tsv`, and that no secret-looking text is in the report. Fix every `FAIL` and run it again before showing the report. If it can't run, say so in the report.
+
 ## Step 7: Act, with permission
 
 Show the plain-words section first (verdict, fix-these-first, what you need to confirm), then the launch checklist counts, the score table exactly as in the report (all five columns, never just dimension and number), the live-site summary if any, the proposed fixes and the refactor plan. Change nothing until the user picks an item. Then:
