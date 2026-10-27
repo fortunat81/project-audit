@@ -252,6 +252,13 @@ if ! find_python; then skip "web page (no Python 3.8+ found)"; else
   if [ -s "$H/report.html" ]; then ok "web page is built"; else bad "web page is built" "report.html missing or empty"; fi
   if grep -Eq '<script>alert|<img src=x onerror' "$H/report.html"; then bad "hostile markup is not rendered" "raw markup found in report.html"; else ok "hostile markup is not rendered"; fi
   if grep -q 'Launch with limits' "$H/report.html" && grep -q 'No secrets' "$H/report.html"; then ok "web page shows the verdict and the checklist"; else bad "web page shows the verdict and the checklist" "missing"; fi
+  # Without JavaScript (a viewer that does not run scripts, such as a file preview) the page must still show its content
+  if PYTHONUTF8=1 $PYTHON -c "
+import re, sys, html
+t = open(sys.argv[1], encoding='utf-8').read()
+t = html.unescape(re.sub(r'<[^>]+>', ' ', re.sub(r'<script.*?</script>', '', t, flags=re.S)))
+need = ['Launch with limits', 'No secrets', 'Findings', 'Launch checklist', 'What was checked', 'X-RULE', 'Written report']
+sys.exit(0 if all(n in t for n in need) else 1)" "$H/report.html"; then ok "the page shows its content without JavaScript"; else bad "the page shows its content without JavaScript" "content missing when scripts are removed"; fi
   # French and English carry the same labels
   if PYTHONUTF8=1 $PYTHON -c "import sys; sys.path.insert(0, sys.argv[1]); import audit_report_html as m; sys.exit(0 if set(m.I18N['en']) == set(m.I18N['fr']) else 1)" "$HERE/../scripts"; then ok "French and English have the same labels"; else bad "French and English have the same labels" "keys differ"; fi
   # Hostile text in the report and in proposed fixes is shown as text

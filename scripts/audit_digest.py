@@ -47,6 +47,8 @@ class Collector:
     def __init__(self, folder):
         self.folder = folder
         self.found = {}
+        # Some tools print absolute paths; show them relative to the project (the folder that holds audit/)
+        self.root = os.path.dirname(os.path.dirname(os.path.abspath(folder))).replace("\\", "/").rstrip("/") + "/"
 
     def read(self, name):
         try:
@@ -66,6 +68,8 @@ class Collector:
 
     def add(self, source, sev, rule, file, line=""):
         file = norm(file)
+        if file.lower().startswith(self.root.lower()):
+            file = file[len(self.root):]
         rule = str(rule or "finding")
         key = (source, rule, file)
         have = self.found.get(key)

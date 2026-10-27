@@ -30,7 +30,7 @@ I18N = {
         "nav_coverage": "Coverage", "nav_report": "Report",
         "verdict_dont-launch": "Don't launch yet", "verdict_launch-with-limits": "Launch with limits",
         "verdict_no-blocking-problems": "No blocking problems found", "verdict_none": "No written verdict yet",
-        "verdict_none_hint": "This page shows the scan results only.", "level": "Level", "audit": "audit",
+        "verdict_none_hint": "This page shows the scan results only.", "mode_line": "Level {n}, {mode} audit",
         "quick": "quick", "full": "full",
         "sev_critical": "Critical", "sev_high": "High", "sev_medium": "Medium", "sev_low": "Low", "sev_info": "Info",
         "checks_ran": "checks ran fully", "findings": "Findings", "all_tools": "All tools", "search": "Search file, rule or ID",
@@ -68,7 +68,7 @@ I18N = {
         "nav_coverage": "Couverture", "nav_report": "Rapport",
         "verdict_dont-launch": "Ne pas lancer tout de suite", "verdict_launch-with-limits": "Lancement avec réserves",
         "verdict_no-blocking-problems": "Aucun problème bloquant trouvé", "verdict_none": "Pas encore de verdict écrit",
-        "verdict_none_hint": "Cette page ne montre que les résultats de l'analyse.", "level": "Niveau", "audit": "audit",
+        "verdict_none_hint": "Cette page ne montre que les résultats de l'analyse.", "mode_line": "Niveau {n}, audit {mode}",
         "quick": "rapide", "full": "complet",
         "sev_critical": "Critique", "sev_high": "Élevé", "sev_medium": "Moyen", "sev_low": "Faible", "sev_info": "Info",
         "checks_ran": "vérifications complètes", "findings": "Constats", "all_tools": "Tous les outils", "search": "Chercher un fichier, une règle ou un ID",
@@ -280,6 +280,67 @@ def render_markdown(text):
     return "\n".join(out)
 
 
+def _e(x):
+    return html.escape(str(x), quote=True)
+
+
+def static_fragments(data):
+    """The page content as plain HTML (English), so it shows even where scripts do not run.
+    The page script replaces all of this with the interactive, translated version."""
+    en = I18N["en"]
+    f = {}
+    f["S_PROJECT"] = _e(data["project"])
+    f["S_META"] = _e(data["meta"])
+    vk = data["verdict"] or "none"
+    text = en["verdict_" + vk]
+    tail = en["mode_line"].format(n=data["level"], mode=en.get(data["mode"] or "full", "")) if data["verdict"] else en["verdict_none_hint"]
+    f["S_VERDICT"] = '<div class="verdict v-%s"><span>%s</span>%s</div>' % (vk, _e(text), _e(tail))
+    f["S_NOTICES"] = "".join('<div class="notice">%s%s</div>' % (("%d " % n["n"]) if n.get("n") is not None else "", _e(en[n["key"]])) for n in data["notices"])
+    counts = {s: sum(1 for x in data["findings"] if x["severity"] == s) for s in SEVERITIES}
+    ran = sum(1 for m in data["manifest"] if m["cls"] in ("ok", "find"))
+    f["S_CARDS"] = "".join('<div class="card s-%s"><b>%d</b><span>%s</span></div>' % (s, counts[s], _e(en["sev_" + s])) for s in SEVERITIES)         + '<div class="card"><b>%d / %d</b><span>%s</span></div>' % (ran, len(data["manifest"]), _e(en["checks_ran"]))
+    bars = []
+    for k, v in data["scores"].items():
+        label = _e(en.get("dim_" + k, k))
+        if v is None:
+            bars.append('<div class="bar"><b>%s</b><span></span><i>%s</i></div>' % (label, _e(en["not_assessed"])))
+        else:
+            conf = data["confidence"].get(k)
+            bars.append('<div class="bar"><b>%s</b><div class="track"><div class="fill" style="width:%d%%"></div></div><i>%d%s</i></div>'
+                        % (label, max(0, min(100, int(v))), int(v), (" (%s)" % _e(conf)) if conf else ""))
+    f["S_SCORES"] = '<section><h2>%s</h2><div class="bars">%s</div></section>' % (_e(en["scores"]), "".join(bars)) if bars else ""
+    rows = []
+    for x in data["findings"][:400]:   # the script shows them all; without it the first 400 are enough to read
+        where = x["file"] + (":%s" % x["line"] if x["line"] not in ("", None) else "")
+        rows.append('<tr><td><span class="pill p-%s">%s</span></td><td>%s</td><td>%s</td><td>%s</td><td class="file">%s</td></tr>' % (
+            _e(x["severity"]), _e(en["sev_" + x["severity"]]), _e(x["id"]), _e(x["source"]),
+            _e(x["rule"] + ("  (x%d)" % x["count"] if x["count"] > 1 else "")), _e(where)))
+    f["S_FINDINGS"] = "".join(rows)
+    fx = []
+    for x in data["fixes"]:
+        meta = ['<span class="badge">%s</span>' % _e(en["who_you"] if x["who"] == "you" else en["who_claude"])]
+        if x.get("finding"):
+            meta.append('<span class="badge">%s</span>' % _e(x["finding"]))
+        if x.get("file"):
+            meta.append('<span class="file">%s</span>' % _e(x["file"]))
+        body = "".join("<p><b>%s:</b> %s</p>" % (_e(en[k]), _e(x[key])) for k, key in (("why", "why"), ("change", "change"), ("verify", "verify")) if x.get(key))
+        fx.append('<div class="fix"><h3>%s  %s</h3><div class="meta">%s</div>%s</div>' % (_e(x["id"]), _e(x["title"]), "".join(meta), body))
+    f["S_FIXES"] = "".join(fx) or '<div class="empty">%s</div>' % _e(data["fixes_error"] or en["fixes_none"])
+    f["S_CHECK_HIDDEN"] = "" if data["checklist"] else " hidden"
+    f["S_CHECKLIST"] = "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % _e(c) for c in (r["n"], r["item"], r["mark"], r["by"], r["evidence"])) for r in data["checklist"])
+    f["S_COVERAGE"] = "".join('<tr class="c-%s"><td>%s</td><td>%s</td><td>%s</td></tr>' % (m["cls"], _e(m["tool"]), _e(m["status"]), _e(m["dimension"])) for m in data["manifest"])
+    f["S_REPORT"] = data["report_html"]   # already built and escaped by render_markdown
+    f["S_NOREPORT_HIDDEN"] = " hidden" if data["report_source"] else ""
+    return f
+
+
+def fill_labels(page):
+    """Put the English text into every element the page script would translate."""
+    en = I18N["en"]
+    pattern = r'(<(\w+)[^>]*\sdata-i18n="(\w+)"[^>]*>)(</\2>)'
+    return re.sub(pattern, lambda m: m.group(1) + _e(en.get(m.group(3), "")) + m.group(4), page)
+
+
 def build(folder):
     meta = read_meta(folder)
     findings = read_findings(folder)
@@ -320,7 +381,10 @@ def build(folder):
     }
     # "<" ">" "&" are escaped so nothing in the data can end the script block or open a tag
     data_json = json.dumps(data).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
-    return PAGE.replace("{{TITLE}}", html.escape("Audit: " + project)).replace("{{DATA}}", data_json)
+    page = fill_labels(PAGE)
+    for key, value in static_fragments(data).items():
+        page = page.replace("{{%s}}" % key, value)
+    return page.replace("{{TITLE}}", html.escape("Audit: " + project)).replace("{{DATA}}", data_json)
 
 
 PAGE = r"""<!doctype html>
@@ -404,13 +468,14 @@ pre.source{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace
   <a href="#summary" data-i18n="nav_summary"></a><a href="#findings-sec" data-i18n="nav_findings"></a><a href="#fixes-sec" data-i18n="nav_fixes"></a>
   <a href="#checklist-sec" data-i18n="nav_checklist"></a><a href="#coverage-sec" data-i18n="nav_coverage"></a><a href="#report-sec" data-i18n="nav_report"></a>
  </nav>
- <div class="tools"><button id="lang" type="button"></button><button id="theme" type="button"></button></div>
+ <div class="tools" id="tools" hidden><button id="lang" type="button"></button><button id="theme" type="button"></button></div>
 </div></header>
 <main>
+<noscript><div class="notice">JavaScript is off in this viewer: showing the English, read-only view. Open the file in a web browser for French, light/dark, filters and fix approval.</div></noscript>
 <div id="summary">
- <h1 id="project"></h1><p class="sub" id="meta"></p>
- <div id="verdict"></div><div id="notices"></div><div class="cards" id="cards"></div>
- <div id="scores"></div>
+ <h1 id="project">{{S_PROJECT}}</h1><p class="sub" id="meta">{{S_META}}</p>
+ <div id="verdict">{{S_VERDICT}}</div><div id="notices">{{S_NOTICES}}</div><div class="cards" id="cards">{{S_CARDS}}</div>
+ <div id="scores">{{S_SCORES}}</div>
 </div>
 
 <section id="findings-sec">
@@ -427,7 +492,7 @@ pre.source{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace
 </div>
 <div class="tablewrap"><table id="findings"><thead><tr>
  <th data-k="severity" data-i18n="th_severity"></th><th data-k="id" data-i18n="th_id"></th><th data-k="source" data-i18n="th_tool"></th>
- <th data-k="rule" data-i18n="th_what"></th><th data-k="file" data-i18n="th_where"></th></tr></thead><tbody></tbody></table></div>
+ <th data-k="rule" data-i18n="th_what"></th><th data-k="file" data-i18n="th_where"></th></tr></thead><tbody>{{S_FINDINGS}}</tbody></table></div>
 <div class="empty" id="none" hidden data-i18n="no_match"></div>
 <p class="muted" data-i18n="findings_note"></p>
 </section>
@@ -435,7 +500,7 @@ pre.source{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace
 <section id="fixes-sec">
 <h2 data-i18n="fixes"></h2>
 <p class="muted" data-i18n="fixes_intro"></p>
-<div id="fixlist"></div>
+<div id="fixlist">{{S_FIXES}}</div>
 <p class="muted" id="serverhint" hidden></p>
 </section>
 
@@ -445,22 +510,22 @@ pre.source{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace
 <pre class="source" id="log"></pre>
 </section>
 
-<section id="checklist-sec" hidden>
+<section id="checklist-sec"{{S_CHECK_HIDDEN}}>
 <h2 data-i18n="checklist"></h2>
-<div class="tablewrap"><table id="checklist"><thead><tr><th data-i18n="th_n"></th><th data-i18n="th_item"></th><th data-i18n="th_mark"></th><th data-i18n="th_by"></th><th data-i18n="th_evidence"></th></tr></thead><tbody></tbody></table></div>
+<div class="tablewrap"><table id="checklist"><thead><tr><th data-i18n="th_n"></th><th data-i18n="th_item"></th><th data-i18n="th_mark"></th><th data-i18n="th_by"></th><th data-i18n="th_evidence"></th></tr></thead><tbody>{{S_CHECKLIST}}</tbody></table></div>
 </section>
 
 <section id="coverage-sec">
 <h2 data-i18n="coverage"></h2>
-<div class="tablewrap"><table id="coverage"><thead><tr><th data-i18n="th_check"></th><th data-i18n="th_result"></th><th data-i18n="th_feeds"></th></tr></thead><tbody></tbody></table></div>
+<div class="tablewrap"><table id="coverage"><thead><tr><th data-i18n="th_check"></th><th data-i18n="th_result"></th><th data-i18n="th_feeds"></th></tr></thead><tbody>{{S_COVERAGE}}</tbody></table></div>
 </section>
 
 <section id="report-sec">
 <h2 data-i18n="report"></h2>
 <div class="seg" id="seg"><button type="button" data-view="formatted" class="on" data-i18n="formatted"></button><button type="button" data-view="source" data-i18n="source"></button></div>
-<div class="report" id="report-formatted"></div>
+<div class="report" id="report-formatted">{{S_REPORT}}</div>
 <pre class="source" id="report-source" hidden></pre>
-<div class="empty" id="no-report" hidden data-i18n="no_report"></div>
+<div class="empty" id="no-report"{{S_NOREPORT_HIDDEN}} data-i18n="no_report"></div>
 </section>
 </main>
 
@@ -505,7 +570,7 @@ pre.source{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace
   document.getElementById('meta').textContent=D.meta;
   var v=document.getElementById('verdict');v.textContent='';
   var vk=D.verdict||'none', box=el('div','verdict v-'+vk), b=el('span',null,t('verdict_'+vk));box.appendChild(b);
-  box.appendChild(document.createTextNode(D.verdict?(t('level')+' '+D.level+', '+t(D.mode||'full')+' '+t('audit')):t('verdict_none_hint')));v.appendChild(box);
+  box.appendChild(document.createTextNode(D.verdict?t('mode_line',{n:D.level,mode:t(D.mode||'full')}):t('verdict_none_hint')));v.appendChild(box);
   var nb=document.getElementById('notices');nb.textContent='';
   D.notices.forEach(function(n){nb.appendChild(el('div','notice',(n.n!=null?n.n+' ':'')+t(n.key)))});
   var counts={};D.findings.forEach(function(f){counts[f.severity]=(counts[f.severity]||0)+1});
@@ -634,6 +699,7 @@ pre.source{white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace
   api('/api/start',{method:'POST',body:JSON.stringify({ids:c.map(function(f){return f.id}),notes:notes})}).then(function(r){
    if(r.ok){flash(t('started'));poll()}else{flash(t('start_failed')+': '+(r.j&&r.j.error||''))}})});
  var _upd=updateBar;updateBar=function(){_upd();if(S&&S.fixable){document.getElementById('fixbtn').disabled=!claudeFixes().length}};
+ document.getElementById('tools').hidden=false;
  renderStatic();initServer();
 })();
 </script>
