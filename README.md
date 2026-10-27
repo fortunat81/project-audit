@@ -70,11 +70,16 @@ Most checks only read files. A few run the project's own code, which is fine for
 ## Test the auditor
 
 ```bash
+bash tests/lint.sh                         # seconds: syntax of every script, Ruff, ShellCheck, the page's JavaScript
+bash tests/run-tests.sh --fast             # about a minute: the checks plus a few scenarios
+bash tests/run-tests.sh                    # everything, in parallel (a couple of minutes)
+bash tests/run-tests.sh expo-supabase-ai   # one scenario (or one check, e.g. serve-check)
+bash tests/run-tests.sh --serial           # one at a time, easier to read when something fails
 bash tests/run-tests.sh --install          # install missing scanners first, then run everything
-bash tests/run-tests.sh                    # all scenarios
-bash tests/run-tests.sh expo-supabase-ai   # one scenario
 KEEP=1 bash tests/run-tests.sh             # keep the temporary projects to inspect
 ```
+
+GitHub Actions runs the lint and the quick set on Linux, macOS and Windows for every push (`.github/workflows/tests.yml`). `ARCHITECTURE.md` maps the project; `CLAUDE.md` holds the working rules for anyone (or any AI session) changing it.
 
 Each scenario in `tests/scenarios/` is a small fake project with planted problems (an open database table, a paid AI key in app code, a committed `.env`, open Firebase rules, a secret in git history...) plus harmless look-alikes that must **not** be flagged. `expected.tsv` lists what the auditor must find. Results are PASS, FAIL, or UNTESTED (that scanner isn't installed on this machine).
 

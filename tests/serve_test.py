@@ -119,7 +119,7 @@ def main():
         listed = text.split("Approved fixes:")[1] if "Approved fixes:" in text else ""
         say("[1] P-2" in listed and "[2] P-3" in listed and "P-1" not in listed, "the prompt lists exactly the approved Claude fixes")
         say("audit-fix/2026-01-01_000000" in text and "Never push" in text, "the prompt makes Claude use a new branch and never push")
-        note_line = [l for l in text.splitlines() if "User note" in l]
+        note_line = [ln for ln in text.splitlines() if "User note" in ln]
         say(bool(note_line) and len(note_line[0]) < 700 and "\x00" not in text, "the note is length-limited and cleaned")
         approved = json.load(open(os.path.join(run, "approved-fixes.json"), encoding="utf-8"))
         say(approved.get("approved") == ["P-2", "P-3"], "approved-fixes.json records the approved ids")
@@ -131,7 +131,7 @@ def main():
             if st["state"] != "running":
                 break
             time.sleep(0.5)
-        say(st["state"] == "done" and any("Applied P-3" in l for l in st["log"]), "progress is readable and the run finishes", st["state"])
+        say(st["state"] == "done" and any("Applied P-3" in ln for ln in st["log"]), "progress is readable and the run finishes", st["state"])
 
         # translation: allowed to read and write files only, in the run folder
         if os.path.exists(CALLED):
