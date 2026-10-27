@@ -9,6 +9,7 @@
 #   bash scan.sh --all         show what was detected and which modules apply (changes nothing)
 #   bash scan.sh --all            scan this folder and every project folder in it, each with its own checks
 #   bash scan.sh --projects       list project folders (this one and any in subfolders); audit each (changes nothing)
+#   bash scan.sh --verdict        compute the release verdict from scores.json and the checklist in AUDIT.md (changes nothing)
 #   bash scan.sh --verify-report  check the finished AUDIT.md and scores.json for mistakes (changes nothing)
 #   bash scan.sh --check          list missing tools and how to install them (changes nothing)
 #   bash scan.sh --install        install the missing tools this project needs (see below)
@@ -27,6 +28,7 @@ set -u
 ROOT="$(pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHECKS_DIR="$SCRIPT_DIR/checks"
+. "$SCRIPT_DIR/find-python.sh"   # find_python: a working Python 3.8+ (skips the Microsoft Store stub)
 SKIPFILE="$ROOT/audit/.skip-tools"   # tools the user asked never to be offered again
 
 # Tools fetched with npx are pinned so results don't change between audits just because a
@@ -360,6 +362,14 @@ if [ "${1:-}" = "--all" ]; then
   } | tee "$ALL_SUMMARY"
   echo "Combined summary saved in: $ALL_SUMMARY"
   exit 0
+fi
+
+if [ "${1:-}" = "--verdict" ]; then
+  # The release verdict computed from the rules in reviews/release-gate.md (level, mode, confirmed findings, checklist marks)
+  shift
+  if ! find_python; then echo "The verdict calculation needs Python 3.8 or newer (none found)."; exit 1; fi
+  D="${1:-}"; [ -z "$D" ] && [ -f audit/latest.txt ] && D="$(cat audit/latest.txt)"
+  PYTHONUTF8=1 exec $PYTHON "$SCRIPT_DIR/audit_verdict.py" "$D"
 fi
 
 if [ "${1:-}" = "--verify-report" ]; then
@@ -742,8 +752,9 @@ if is_git; then echo "commit_end=$(git rev-parse --verify -q HEAD || echo none)"
 echo "$OUT" > "$ROOT/audit/latest.txt"
 
 # A compact digest of the findings (findings.tsv, digest.txt) so the report can be written without reading raw output
-if has node; then node "$SCRIPT_DIR/digest.js" "$OUT" >/dev/null 2>&1 || echo "NOTE: digest.txt could not be built; read manifest.tsv and the tool outputs"
-else echo "NOTE: digest.txt skipped (needs node); read manifest.tsv and the tool outputs"; fi
+if find_python; then
+  PYTHONUTF8=1 $PYTHON "$SCRIPT_DIR/audit_digest.py" "$OUT" >/dev/null 2>&1 || echo "NOTE: digest.txt could not be built; read manifest.tsv and the tool outputs"
+else echo "NOTE: digest.txt skipped (needs Python 3.8 or newer); read manifest.tsv and the tool outputs"; fi
 
 # Coverage summary: how much of the audit actually ran
 awk -F'\t' 'NR>1 {

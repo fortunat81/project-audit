@@ -56,7 +56,8 @@ fi
 if [ $# -gt 0 ]; then SCENARIOS="$*"; else SCENARIOS="$(ls "$HERE/scenarios")"; fi
 
 for name in $SCENARIOS; do
-  [ "$name" = "report-check" ] && continue   # handled after the scenarios
+  [ "$name" = "report-check" ] && continue
+  [ "$name" = "verdict-check" ] && continue   # handled after the scenarios
   src="$HERE/scenarios/$name"
   [ -d "$src" ] || { echo "No such scenario: $name"; FAIL=$((FAIL+1)); continue; }
   dest="$WORK/$name"
@@ -163,7 +164,7 @@ Verdict: Launch with limits
 
 | Security | 70 | medium | semgrep (findings), gitleaks (clean) | ok |
 " "$mark" > "$d/AUDIT.md"
-  printf '{"date":"2026-01-01","mode":"%s","rubric":2,"level":%s,"verdict":"%s","checklist":{"pass":%s,"fail":%s,"partial":0,"not_verified":1,"not_applicable":0},"scores":{"architecture":80,"modularity":80,"spaghettiness":80,"security":70,"quality":80,"scalability":null,"documentation":60}}'     "$4" "$3" "$2" "$([ "$5" -gt 0 ] && echo 0 || echo 1)" "$5" > "$d/scores.json"
+  printf '{"date":"2026-01-01","mode":"%s","rubric":2,"level":%s,"verdict":"%s","confirmed":{"critical":0,"high":0},"checklist":{"pass":%s,"fail":%s,"partial":0,"not_verified":1,"not_applicable":0},"scores":{"architecture":80,"modularity":80,"spaghettiness":80,"security":70,"quality":80,"scalability":null,"documentation":60}}'     "$4" "$3" "$2" "$([ "$5" -gt 0 ] && echo 0 || echo 1)" "$5" > "$d/scores.json"
 }
 expect_report() {   # expect_report <label> <dir> <ok|fail>
   if bash "$VR" "$2" >"$2/verify.out" 2>&1; then got=ok; else got=fail; fi
@@ -190,6 +191,36 @@ make_report "$RC/greenfail" no-blocking-problems 1 full 1; sed -i 's/Launch with
 expect_report "a green verdict with a failed item is caught" "$RC/greenfail" fail
 make_report "$RC/phrase" launch-with-limits 2 full 0; sed -i 's/Launch with limits/Looks fine/' "$RC/phrase/AUDIT.md"
 expect_report "a report that does not state the verdict is caught" "$RC/phrase" fail
+fi
+
+# --- Verdict rules: the same inputs always give the same verdict (scripts/audit_verdict.py)
+if [ $# -eq 0 ] || [ "${1:-}" = "verdict-check" ]; then
+echo
+echo "=== verdict-check (scripts/audit_verdict.py)"
+. "$HERE/../scripts/find-python.sh"
+if ! find_python; then skip "verdict rules (no Python 3.8+ found)"; else
+expect_verdict() {   # expect_verdict <label> <expected> <args...>
+  local label="$1" want="$2"; shift 2
+  got="$(PYTHONUTF8=1 $PYTHON "$HERE/../scripts/audit_verdict.py" "$@" 2>&1 | sed -n 's/^VERDICT=//p')"
+  if [ "$got" = "$want" ]; then ok "verdict: $label"; else bad "verdict: $label" "expected $want, got ${got:-nothing}"; fi
+}
+ALLPASS="1:pass,2:pass,9:pass,13:pass,19:pass,22:pass"
+expect_verdict "a confirmed critical finding blocks, even with every item passed" dont-launch --level 1 --mode full --critical 1 --marks "$ALLPASS"
+expect_verdict "a confirmed high finding blocks" dont-launch --level 2 --mode full --high 1 --marks "$ALLPASS"
+expect_verdict "a failed secrets item (group A) blocks" dont-launch --level 1 --mode full --marks "1:fail,2:pass"
+expect_verdict "a failed access item (group C) blocks" dont-launch --level 2 --mode full --marks "9:fail,1:pass"
+expect_verdict "a failed money-logic item (group D) blocks" dont-launch --level 2 --mode full --marks "13:fail,1:pass"
+expect_verdict "a failed item outside groups A to D does not block, but is not green" launch-with-limits --level 1 --mode full --marks "19:fail,1:pass"
+expect_verdict "every item passed at Level 1 is green" no-blocking-problems --level 1 --mode full --marks "$ALLPASS"
+expect_verdict "every item passed at Level 2, full mode, is green" no-blocking-problems --level 2 --mode full --marks "$ALLPASS"
+expect_verdict "not-applicable items do not count against green" no-blocking-problems --level 1 --mode full --marks "1:pass,9:na,13:na"
+expect_verdict "a quick audit of a Level 2 project is never green" launch-with-limits --level 2 --mode quick --marks "$ALLPASS"
+expect_verdict "a quick audit of a Level 1 project can be green" no-blocking-problems --level 1 --mode quick --marks "$ALLPASS"
+expect_verdict "Level 3 is never green" launch-with-limits --level 3 --mode full --marks "$ALLPASS"
+expect_verdict "an unverified item keeps it at launch with limits" launch-with-limits --level 1 --mode full --marks "1:pass,4:unverified"
+expect_verdict "a partly done item keeps it at launch with limits" launch-with-limits --level 1 --mode full --marks "1:pass,19:partial"
+expect_verdict "no checklist at all is never green" launch-with-limits --level 1 --mode full
+fi
 fi
 
 echo
