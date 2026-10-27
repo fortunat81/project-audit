@@ -90,8 +90,30 @@ def coverage():
     say(len(lines) == 1, "a fully clean run has just the one line", lines)
 
 
+def severity_matches_checklists():
+    """The scan's own severity must agree with the Supabase checklist (reviews/supabase.md):
+    a table with no row-level security is critical, an open write policy is high."""
+    run = tempfile.mkdtemp(prefix="sev")
+    text = "\n".join([
+        "NO RLS: table 'bookings' is created in a migration but never gets 'enable row level security'",
+        'REVIEW open policy: supabase/migrations/001.sql:12:create policy "anyone can insert" on bookings for insert with check (true);',
+        'REVIEW open policy: supabase/migrations/002.sql:5:create policy "public read" on posts for select using (true);',
+        'REVIEW open policy: supabase/migrations/003.sql:3:create policy "public read" on tags for select using (true);',
+        'REVIEW open policy: supabase/migrations/003.sql:9:create policy "anyone can update" on tags for update using (true);',
+    ]) + "\n"
+    with open(os.path.join(run, "supabase-rls.txt"), "w", newline="\n") as f:
+        f.write(text)
+    found = audit_digest.Collector(run).collect()
+    sev = {(x["rule"], x["file"]): x["severity"] for x in found}
+    say(sev.get(("NO RLS", "")) == "critical", "a table with no row-level security is critical", sev)
+    say(sev.get(("REVIEW open policy", "supabase/migrations/001.sql")) == "high", "an open insert policy is high", sev)
+    say(sev.get(("REVIEW open policy", "supabase/migrations/002.sql")) == "medium", "an open read-only policy stays medium", sev)
+    say(sev.get(("REVIEW open policy", "supabase/migrations/003.sql")) == "high", "when one file has a read policy and a write policy, the file is high", sev)
+
+
 if __name__ == "__main__":
     live_site()
     markdown()
     digest()
     coverage()
+    severity_matches_checklists()

@@ -7,6 +7,7 @@ so a report can always be matched to the version of the tool that made it.
 
 - Fixes from the first real-use test report (each has a test that failed first):
   - Tools installed with `pip install --user` are found on Windows even when pip's Scripts folder is not on PATH (including the Microsoft Store Python).
+  - Severity now matches the Supabase checklist: a table with no row-level security is critical, an open write policy is high; a file shows its worst finding.
 - Maintainability rounds 1 to 3: trait detection is now tables plus small functions; `--status`, the
   release-readiness check, the live-site check, the Markdown renderer, the digest text and the scan run
   were each split into small functions, with new tests (`modes-check`, `helpers-check`).

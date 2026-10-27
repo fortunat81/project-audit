@@ -75,6 +75,8 @@ class Collector:
         have = self.found.get(key)
         if have:
             have["count"] += 1
+            if SEV_ORDER[sev] < SEV_ORDER[have["severity"]]:
+                have["severity"] = sev   # the file shows its worst finding
             return
         fid = "F-" + hashlib.sha1("|".join(key).encode("utf-8")).hexdigest()[:6]  # nosemgrep: only a short stable label for a finding, not a security use
         self.found[key] = {"id": fid, "source": source, "severity": sev, "rule": rule,
@@ -182,6 +184,10 @@ class Collector:
                     sev = "high"
                 elif line.startswith("WARN"):
                     sev = "medium"
+                elif line.startswith("NO RLS"):
+                    sev = "critical"   # reviews/supabase.md: a table without row-level security is open to anyone with the public key
+                elif line.startswith("REVIEW open policy") and re.search(r"for\s+(insert|update|delete|all)\b|with\s+check", line, re.I):
+                    sev = "high"       # an open policy that lets anyone write (a read-only open policy stays medium)
                 elif re.search(r"COMMITTED TO GIT|CLIENT-VISIBLE|OPEN TO EVERYONE|service.role", line, re.I):
                     sev = "high"
                 else:
