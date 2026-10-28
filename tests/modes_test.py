@@ -142,6 +142,8 @@ def main():
     cmd = audit_scan.app_window_command(page, lambda names: "/bin/" + names[-1])
     say(bool(cmd) and cmd[0].endswith(audit_scan.BROWSER_NAMES[-1]), "the first browser found in the list is used")
 
+    isolated_tools_checks()
+
     # one window per run: the progress page opened at the start already turns into the report, so --open must not
     # open a second window after it; a later --open (the window was closed) opens again
     opened = []
@@ -157,6 +159,56 @@ def main():
     say(opened == [], "--open right after the progress page opened does not open a second window", opened)
     audit_scan.open_report(run, opened.append)
     say(len(opened) == 1 and opened[0].endswith("report.html"), "the next --open opens the report again", opened)
+
+
+def isolated_tools_checks():
+    """mobsfscan brings its own semgrep, which can clash with the one the audit uses. The skill keeps it in its own
+    virtual environment (under AUDIT_TOOLS_DIR, default ~/.project-audit/tools) and uses it only for that tool."""
+    home = tempfile.mkdtemp(prefix="tools")
+    saved = {k: os.environ.get(k) for k in ("AUDIT_TOOLS_DIR", "PATH")}
+    os.environ["AUDIT_TOOLS_DIR"] = home
+    try:
+        say(audit_core.isolated_exe("mobsfscan") is None, "no isolated mobsfscan before it is installed")
+        say(all(t in audit_core.ISOLATED_TOOLS for t in ("semgrep", "ruff", "zizmor", "pip-audit", "lizard", "mobsfscan"))
+            and not any(t in audit_core.ISOLATED_TOOLS for t in ("gitleaks", "osv-scanner", "git", "npx")),
+            "every Python tool is kept in its own environment; programs that are not Python packages are not")
+
+        calls = []
+
+        def fake(argv):
+            calls.append(list(argv))
+            if "venv" in argv:   # what python -m venv leaves behind
+                bindir = audit_core.isolated_bin("mobsfscan")
+                os.makedirs(bindir)
+                open(os.path.join(bindir, "python.exe" if audit_core.is_windows() else "python"), "w").close()
+            return 0
+        code = audit_modes.install_isolated("mobsfscan", fake)
+        venv_dir = os.path.join(home, "mobsfscan")
+        say(code == 0 and len(calls) == 2 and calls[0][1:3] == ["-m", "venv"] and calls[0][3] == venv_dir,
+            "installing creates a virtual environment in its own folder", calls)
+        say(len(calls) == 2 and calls[1][0].startswith(audit_core.isolated_bin("mobsfscan")) and calls[1][1:4] == ["-m", "pip", "install"]
+            and calls[1][-1] == "mobsfscan", "then installs the tool with that environment's own pip", calls)
+        say(not any("--user" in c or "pipx" in c for call in calls for c in call), "nothing goes into the shared user packages")
+
+        failing = audit_modes.install_isolated("mobsfscan", lambda argv: 1)
+        say(failing != 0, "a failed install is reported as a failure")
+
+        exe = os.path.join(audit_core.isolated_bin("mobsfscan"), "mobsfscan.exe" if audit_core.is_windows() else "mobsfscan")
+        open(exe, "w").close()
+        say(audit_core.isolated_exe("mobsfscan") == exe, "once installed the isolated copy is found", audit_core.isolated_exe("mobsfscan"))
+        os.environ["PATH"] = os.pathsep.join([home, os.environ.get("PATH", "")])
+        env = audit_core.isolated_env("mobsfscan")
+        say(env["PATH"].split(os.pathsep)[0] == audit_core.isolated_bin("mobsfscan"),
+            "that tool runs with its own folder first, so it uses its own semgrep", env["PATH"][:120])
+        say(audit_core.isolated_env("gitleaks") == {}, "other tools run with the normal PATH")
+        say(audit_core.isolated_bin("mobsfscan") not in os.environ["PATH"].split(os.pathsep),
+            "the environment's folder is not added to the audit's own PATH")
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 if __name__ == "__main__":

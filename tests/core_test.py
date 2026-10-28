@@ -123,6 +123,32 @@ def main():
     for name in ("semgrep", "gitleaks", "osv-scanner", "ruff", "zizmor", "pip-audit", "lizard", "mobsfscan", "npx", "flutter", "dart", "curl", "git"):
         say(bool(ctx.install_hint(name)), "there is an install hint for %s" % name)
 
+    # a tool installed in its own environment runs from there (its folder first on PATH), the others as before
+    tools_home = tempfile.mkdtemp(prefix="isotools")
+    saved_home = os.environ.get("AUDIT_TOOLS_DIR")
+    os.environ["AUDIT_TOOLS_DIR"] = tools_home
+    try:
+        env = dict(os.environ)
+        plain = ctx.command(["semgrep", "--version"], env)
+        say(plain[0] != audit_core.isolated_bin("semgrep") and env.get("PATH") == os.environ.get("PATH"),
+            "with no isolated copy a tool is started as before")
+        bindir = audit_core.isolated_bin("semgrep")
+        os.makedirs(bindir)
+        fake_exe = os.path.join(bindir, "semgrep.exe" if audit_core.is_windows() else "semgrep")
+        open(fake_exe, "w").close()
+        env = dict(os.environ)
+        cmd = ctx.command(["semgrep", "scan", "."], env)
+        say(cmd == [fake_exe, "scan", "."], "a tool in its own environment is started from there, with its arguments", cmd)
+        say(env["PATH"].split(os.pathsep)[0] == bindir, "and that environment's folder comes first on PATH for that run", env["PATH"][:100])
+        env = dict(os.environ)
+        ctx.command(["gitleaks", "detect"], env)
+        say(env.get("PATH") == os.environ.get("PATH"), "other tools keep the normal PATH")
+    finally:
+        if saved_home is None:
+            os.environ.pop("AUDIT_TOOLS_DIR", None)
+        else:
+            os.environ["AUDIT_TOOLS_DIR"] = saved_home
+
     # untrusted mode removes secret-looking variables and keeps the audit's own settings
     os.environ["MY_API_TOKEN"] = "x"
     os.environ["AUDIT_KEEP_ME"] = "y"

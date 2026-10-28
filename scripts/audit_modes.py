@@ -9,6 +9,7 @@ import sys
 import time
 
 from audit_checks import load_modules
+import audit_core
 from audit_core import read_text
 
 
@@ -62,6 +63,19 @@ def check(ctx):
 ALL_TOOLS = "gitleaks semgrep osv-scanner pip-audit ruff lizard zizmor mobsfscan".split()
 
 
+def install_isolated(tool, caller=subprocess.call):
+    """Installs a tool into a virtual environment of its own (see audit_core.ISOLATED_TOOLS): nothing goes into the
+    shared user packages or onto the audit's PATH. Returns 0 on success."""
+    folder = os.path.join(audit_core.tools_home(), tool)
+    print("INSTALLING %s: in its own environment, %s" % (tool, folder))
+    sys.stdout.flush()
+    code = caller([sys.executable, "-m", "venv", folder])
+    if code != 0:
+        return code
+    python = os.path.join(audit_core.isolated_bin(tool), "python.exe" if audit_core.is_windows() else "python")
+    return caller([python, "-m", "pip", "install", "--disable-pip-version-check", tool])
+
+
 def install(ctx, args):
     """Installs the missing tools with exactly the commands --check prints. Never uses sudo, and never installs a
     language SDK (Node.js, Flutter, Dart): for those it prints the download link."""
@@ -81,6 +95,13 @@ def install(ctx, args):
             continue
         if tool in user_skipped:
             print("SKIPPED    %s (you chose not to use it)" % tool)
+            continue
+        if tool in audit_core.ISOLATED_TOOLS:
+            if install_isolated(tool) == 0:
+                new += 1
+            else:
+                print("FAILED     %s (the error is above; the audit will skip this tool)" % tool)
+                fail += 1
             continue
         cmd = ctx.install_hint(tool)
         if cmd.startswith(("install", "download")):

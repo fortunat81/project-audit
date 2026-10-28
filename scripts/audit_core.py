@@ -52,6 +52,37 @@ def posix(path):
     return str(path).replace("\\", "/")
 
 
+# The Python tools each live in a virtual environment of their own (mobsfscan, for one, brings its own pinned
+# semgrep), so they cannot clash with each other or with the user's own Python packages, and nothing is installed
+# "--user" or globally. Created by "scan.sh --install".
+ISOLATED_TOOLS = ("semgrep", "ruff", "zizmor", "pip-audit", "lizard", "mobsfscan")
+
+
+def tools_home():
+    return os.environ.get("AUDIT_TOOLS_DIR") or os.path.join(os.path.expanduser("~"), ".project-audit", "tools")
+
+
+def isolated_bin(tool):
+    """The folder holding the programs of the tool's own environment."""
+    return os.path.join(tools_home(), tool, "Scripts" if is_windows() else "bin")
+
+
+def isolated_exe(tool):
+    """The tool's program inside its own environment, or None when it is not installed there."""
+    if tool not in ISOLATED_TOOLS:
+        return None
+    path = os.path.join(isolated_bin(tool), tool + (".exe" if is_windows() else ""))
+    return path if os.path.isfile(path) else None
+
+
+def isolated_env(tool):
+    """Extra environment for running the tool: its own folder first on PATH, so it uses its own dependencies. Nothing
+    is added to the audit's own PATH."""
+    if isolated_exe(tool) is None:
+        return {}
+    return {"PATH": isolated_bin(tool) + os.pathsep + os.environ.get("PATH", "")}
+
+
 def extend_path():
     """A tool just installed with winget or "pip --user" may not be on PATH until the terminal restarts
     (or ever). Look in the places those installers use. Added at the END of PATH, so nothing already
@@ -192,7 +223,7 @@ class Ctx:
 
     # --- the project
     def has(self, tool):
-        return find_executable(tool)[0] is not None
+        return find_executable(tool)[0] is not None or isolated_exe(tool) is not None
 
     def has_trait(self, trait):
         return trait in self.traits
@@ -306,6 +337,11 @@ class Ctx:
         argument would reach cmd.exe) and shell-script shims (a '#!' file such as node_modules/.bin/tsc)."""
         argv = list(argv)
         exe = argv[0]
+        isolated = isolated_exe(exe)
+        if isolated:   # a tool installed in its own environment runs from there, with that environment's folder first
+            env.update(isolated_env(exe))
+            argv[0] = isolated
+            return argv
         if is_windows():
             if os.path.basename(exe).lower() in ("npx", "npm"):
                 node = find_executable("node", env.get("PATH"))[0]
@@ -407,24 +443,9 @@ class Ctx:
         return p.stdout.decode("utf-8", "replace")
 
     # --- hints for installing tools
-    def py_install_cmd(self, pkg):
-        if self.has("pipx"):
-            return "pipx install %s" % pkg
-        if self.has("pip3"):
-            return "pip3 install --user %s" % pkg
-        if self.has("pip"):
-            return "pip install --user %s" % pkg
-        if self.has("py"):
-            return "py -m pip install --user %s" % pkg
-        return "install Python 3 first (https://www.python.org/downloads/), then: pipx install %s" % pkg
-
     def install_hint(self, tool):
-        if tool == "semgrep":
-            if self.has("pipx"):
-                return "pipx install semgrep"
-            if self.has("brew"):
-                return "brew install semgrep"
-            return self.py_install_cmd("semgrep")
+        if tool in ISOLATED_TOOLS:
+            return "scan.sh --install %s (it goes into its own environment, so it cannot clash with your other Python packages)" % tool
         if tool == "gitleaks":
             if is_windows() and self.has("winget"):
                 return "winget install -e --id Gitleaks.Gitleaks"
@@ -441,14 +462,6 @@ class Ctx:
             if self.has("go"):
                 return "go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest"
             return "download the release for your system from https://github.com/google/osv-scanner/releases and put it on your PATH"
-        if tool in ("ruff", "zizmor"):
-            if self.has("pipx"):
-                return "pipx install %s" % tool
-            if self.has("brew"):
-                return "brew install %s" % tool
-            return self.py_install_cmd(tool)
-        if tool in ("pip-audit", "lizard", "mobsfscan"):
-            return self.py_install_cmd(tool)
         if tool == "git":
             if is_windows() and self.has("winget"):
                 return "winget install -e --id Git.Git"

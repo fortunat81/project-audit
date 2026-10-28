@@ -5,6 +5,8 @@ so a report can always be matched to the version of the tool that made it.
 
 ## 2026-10-27
 
+- The Python tools (semgrep, ruff, zizmor, pip-audit, lizard, mobsfscan) are installed by `scan.sh --install` each into its own virtual environment under `~/.project-audit/tools/` (override with `AUDIT_TOOLS_DIR`), no `pipx` needed. Nothing goes into the shared user packages, so mobsfscan's own pinned semgrep can no longer clash with another one. A tool already installed elsewhere keeps working; the isolated copy is used when it exists.
+- Only one browser window opens per run (`--open` no longer opens a second one after the progress page).
 - Fixes from the first real-use test report (each has a test that failed first):
   - The scan now warns when its own copy has no git history or is behind GitHub (`tool_copy=` in `meta.txt`); an old copy used to run silently.
   - Tools installed with `pip install --user` are found on Windows even when pip's Scripts folder is not on PATH (including the Microsoft Store Python).
