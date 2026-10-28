@@ -320,6 +320,46 @@ def check_fixes(r, folder):
         r.ok("fixes.json is well formed (%d fixes)" % len(fixes))
 
 
+PLAN_FILE = "FIX-PLAN.md"
+PLAN_FIX_ID = re.compile(r"\bP-\d+\b")
+
+
+def _fix_ids(folder):
+    """The ids in fixes.json, or an empty set when there are none (check_fixes reports a broken file)."""
+    try:
+        data = json.loads(read(os.path.join(folder, "fixes.json")) or "")
+    except ValueError:
+        return set()
+    fixes = data.get("fixes") if isinstance(data, dict) else data
+    return {x["id"] for x in fixes if isinstance(x, dict) and isinstance(x.get("id"), str)} if isinstance(fixes, list) else set()
+
+
+def check_plan(r, folder):
+    """The fix plan (FIX-PLAN.md next to the report) is built from the proposed fixes: it must exist when there are
+    fixes, mention every one of them, add no step the report did not propose, and hold no secret."""
+    ids = _fix_ids(folder)
+    if not ids:
+        return
+    plan = read(os.path.join(folder, PLAN_FILE))
+    if plan is None:
+        r.fail("%s is missing: write the fix plan from the proposed fixes, next to AUDIT.md" % PLAN_FILE)
+        return
+    problems = 0
+    left_out = sorted(i for i in ids if not re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(i), plan))
+    if left_out:
+        r.fail("%s leaves out proposed fix(es): %s" % (PLAN_FILE, ", ".join(left_out)))
+        problems += 1
+    invented = sorted(set(PLAN_FIX_ID.findall(plan)) - ids)
+    if invented:
+        r.fail("%s has step(s) the report did not propose: %s (every step must come from fixes.json or the report)" % (PLAN_FILE, ", ".join(invented)))
+        problems += 1
+    if SECRET_SHAPES.search(plan):
+        r.fail("%s contains text shaped like a secret" % PLAN_FILE)
+        problems += 1
+    if not problems:
+        r.ok("%s covers all %d proposed fixes and adds none" % (PLAN_FILE, len(ids)))
+
+
 def main(argv):
     folder = argv[1] if len(argv) > 1 else None
     if not folder:
@@ -353,6 +393,7 @@ def main(argv):
         check_report(r, scores, report_text, read(os.path.join(folder, "manifest.tsv")), counts, verdict, mode, level)
         check_independent_review(r, scores, report_text, mode)
     check_fixes(r, folder)
+    check_plan(r, folder)
     if report_text is not None:
         check_translations(r, folder, scores)
     check_secrets(r, report_path, scores_path)

@@ -36,7 +36,20 @@ unit_report_check() {
   make_report "$RC/note" launch-with-limits 2 full 0; sedi 's/semgrep (findings)/semgrep (findings, see note)/' "$RC/note/AUDIT.md"
   expect_report "a status followed by a note is read correctly" "$RC/note" ok
   make_report "$RC/fixok" launch-with-limits 2 full 0; printf '{"fixes":[{"id":"P-1","title":"Pin actions","who":"claude","change":"x","verify":"y"}]}' > "$RC/fixok/fixes.json"
-  expect_report "a well-formed fixes.json passes" "$RC/fixok" ok
+  printf '# Fix plan\n\n1. Pin the actions [P-1]\n' > "$RC/fixok/FIX-PLAN.md"
+  expect_report "a well-formed fixes.json with its fix plan passes" "$RC/fixok" ok
+  make_report "$RC/noplan" launch-with-limits 2 full 0; printf '{"fixes":[{"id":"P-1","title":"Pin actions","who":"claude","change":"x","verify":"y"}]}' > "$RC/noplan/fixes.json"
+  expect_report "proposed fixes with no FIX-PLAN.md are caught" "$RC/noplan" fail
+  make_report "$RC/planmiss" launch-with-limits 2 full 0
+  printf '{"fixes":[{"id":"P-1","title":"a","who":"claude","change":"x","verify":"y"},{"id":"P-2","title":"b","who":"you"}]}' > "$RC/planmiss/fixes.json"
+  printf '# Fix plan\n\n1. Do the first thing [P-1]\n' > "$RC/planmiss/FIX-PLAN.md"
+  expect_report "a fix plan that leaves out a proposed fix is caught" "$RC/planmiss" fail
+  make_report "$RC/planextra" launch-with-limits 2 full 0; printf '{"fixes":[{"id":"P-1","title":"a","who":"claude","change":"x","verify":"y"}]}' > "$RC/planextra/fixes.json"
+  printf '# Fix plan\n\n1. First [P-1]\n2. Something the report never proposed [P-9]\n' > "$RC/planextra/FIX-PLAN.md"
+  expect_report "a fix plan step that is not in the report is caught" "$RC/planextra" fail
+  make_report "$RC/plansecret" launch-with-limits 2 full 0; printf '{"fixes":[{"id":"P-1","title":"a","who":"claude","change":"x","verify":"y"}]}' > "$RC/plansecret/fixes.json"
+  printf '# Fix plan\n\n1. First [P-1] with ghp_%s\n' "$(rand_alnum 36)" > "$RC/plansecret/FIX-PLAN.md"
+  expect_report "a secret-looking value in the fix plan is caught" "$RC/plansecret" fail
   make_report "$RC/fixbad" launch-with-limits 2 full 0; printf '{"fixes":[{"id":"P-1","title":"a","who":"robot"},{"id":"P-1","title":"b","who":"claude"}]}' > "$RC/fixbad/fixes.json"
   expect_report "a bad 'who' and a repeated fix id are caught" "$RC/fixbad" fail
   make_report "$RC/fixsecret" launch-with-limits 2 full 0; printf '{"fixes":[{"id":"P-1","title":"a","who":"you","change":"use ghp_%s"}]}' "$(rand_alnum 36)" > "$RC/fixsecret/fixes.json"
