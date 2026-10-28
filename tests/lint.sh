@@ -36,6 +36,15 @@ else note "ShellCheck not installed (CI runs it)"; fi
 gnu="$(grep -nE "sed -i|grep -[a-zA-Z]*P" $SH_FILES | grep -v "^tests/lint.sh" || true)"
 if [ -n "$gnu" ]; then fail "GNU-only commands (sed -i, grep -P) break on macOS: $gnu"; else pass "no GNU-only sed -i or grep -P in the scripts"; fi
 
+echo "Test runner"
+# An option the runner does not know used to be taken for a test name and started (and wiped) a real run.
+out="$(bash tests/run-tests.sh --no-such-option 2>&1)"; code=$?
+case "$out" in *Usage*) has_usage=1 ;; *) has_usage=0 ;; esac
+if [ "$code" -ne 0 ] && [ "$has_usage" = 1 ]; then pass "run-tests.sh refuses an unknown option and prints the usage"; else fail "run-tests.sh must refuse an unknown option and print the usage (exit $code)"; fi
+out="$(bash tests/run-tests.sh --help 2>&1)"; code=$?
+case "$out" in *Usage*) has_usage=1 ;; *) has_usage=0 ;; esac
+if [ "$code" -eq 0 ] && [ "$has_usage" = 1 ]; then pass "run-tests.sh --help prints the usage and runs nothing"; else fail "run-tests.sh --help must print the usage and exit 0 (exit $code)"; fi
+
 echo "Python"
 PY_FILES="$(find scripts tests -name '*.py' -not -path '*/node_modules/*' -not -path '*/.test-work/*' | sort)"
 bad=0

@@ -42,13 +42,16 @@ if [ "${1:-}" = "--one" ]; then
 fi
 
 # --- Parent mode
+usage() { sed -n '4,12p' "$HERE/run-tests.sh" | sed 's/^# \{0,1\}//'; }
 INSTALL=0; FAST=0; JOBS="${JOBS:-}"; NAMES=""
 while [ $# -gt 0 ]; do
   case "$1" in
+    --help|-h) usage; exit 0 ;;
     --install) INSTALL=1 ;;
     --fast) FAST=1 ;;
     --serial) JOBS=1 ;;
     --jobs) shift; JOBS="${1:-1}" ;;
+    -*) echo "Unknown option: $1"; usage; exit 2 ;;
     *) NAMES="$NAMES $1" ;;
   esac
   shift

@@ -122,8 +122,6 @@ def install(ctx, args):
     print("INSTALL SUMMARY: %d installed, %d already there, %d need a manual install, %d failed" % (new, ok, manual, fail))
     if need_restart:
         print("Some new tools aren't visible in this terminal yet: close it and open a new one.")
-        if ctx.has("pipx"):
-            print("If they still aren't found after that, run: pipx ensurepath")
     return 0 if fail == 0 else 1
 
 

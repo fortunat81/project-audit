@@ -6,7 +6,7 @@ For what the skill does and how to use it, read `README.md` and `SKILL.md`.
 ## The flow
 
 ```
-scan.sh  ->  audit/<run>/        ->  Claude (SKILL.md)       ->  AUDIT.md, scores.json, fixes.json
+scan.sh  ->  audit/<run>/        ->  Claude (SKILL.md)       ->  AUDIT.md, scores.json, fixes.json, FIX-PLAN.md
  detect       manifest.tsv           verify, review,             verdict (audit_verdict.py)
  run checks   meta.txt               score, write                 verify (audit_verify.py)
  digest       findings.tsv, digest.txt                             page (audit_report_html.py)
@@ -17,7 +17,8 @@ scan.sh  ->  audit/<run>/        ->  Claude (SKILL.md)       ->  AUDIT.md, score
    failed-to-run, timeout, skipped, unavailable. A skipped tool is never "clean".
 2. `scripts/audit_digest.py` turns the tool outputs into `findings.tsv` and `digest.txt` (stable IDs, no secret values).
 3. Claude follows `SKILL.md`: verify the findings, load the `reviews/` checklists for the detected traits,
-   score, and write `AUDIT.md`, `scores.json`, `fixes.json` (and the other language, see below).
+   score, and write `AUDIT.md`, `scores.json`, `fixes.json`, `FIX-PLAN.md` (and the other language, see below). In full mode three
+   specialist agents review the code without the tool findings first (`reviews/independent-review.md`).
 4. `audit_verdict.py` computes the release verdict from rules; `audit_verify.py` checks the report is
    consistent with the manifest, the verdict and itself; `audit_report_html.py` builds `report.html`.
 
@@ -28,7 +29,8 @@ scan.sh  ->  audit/<run>/        ->  Claude (SKILL.md)       ->  AUDIT.md, score
 | `SKILL.md` | The instructions Claude follows, step by step |
 | `scripts/scan.sh` | Launcher only: finds a working Python 3.8+ and runs `audit_scan.py` |
 | `scripts/audit_scan.py` | The scan: options, provenance, running the modules, coverage summary |
-| `scripts/audit_core.py` | The run context (`Ctx`): starting tools with timeouts, `run()` decides each status from the real exit code, the manifest, untrusted mode |
+| `scripts/audit_core.py` | The run context (`Ctx`): starting tools with timeouts, `run()` decides each status from the real exit code, the manifest, untrusted mode; the Python tools run from their own environment under `~/.project-audit/tools/` (`ISOLATED_TOOLS`) |
+| `scripts/audit_progress.py` | The live progress page (`progress.html`) that follows the scan and turns into the report |
 | `scripts/audit_detect.py` | Trait detection (expo, next, supabase, ai, ...), languages, project folders in subfolders |
 | `scripts/audit_modes.py` | `--detect`, `--projects`, `--check`, `--install`, `--install-deps`, `--status`, `--version`, `--add-gitignore` |
 | `scripts/audit_checks/mNN_*.py` | One module per kind of check. Each defines `NAME`, `applies(ctx)`, optionally `tools(ctx)`, and `run(ctx)` |
@@ -36,7 +38,7 @@ scan.sh  ->  audit/<run>/        ->  Claude (SKILL.md)       ->  AUDIT.md, score
 | `scripts/gitleaks-extra.toml` | The extra secret rule for `NAME=value` lines |
 | `scripts/audit_digest.py` | Findings digest with stable IDs |
 | `scripts/audit_verdict.py` | The verdict rules (importable and a command) |
-| `scripts/audit_verify.py`, `verify-report.sh` | Report consistency check |
+| `scripts/audit_verify.py`, `verify-report.sh` | Report consistency check: counts, verdict, tool statuses, secrets, the independent-review record (full mode) and that `FIX-PLAN.md` covers exactly the proposed fixes |
 | `scripts/audit_report_html.py` | Builds the web page from the run folder (one self-contained `report.html`) |
 | `scripts/web/page.html`, `page.css`, `page.js` | The page's skeleton, styles and script (kept as separate files so they can be checked on their own) |
 | `scripts/audit_i18n.py` | English/French tables: the 43 checklist items, finding-rule descriptions, check statuses |
@@ -49,7 +51,7 @@ scan.sh  ->  audit/<run>/        ->  Claude (SKILL.md)       ->  AUDIT.md, score
 
 `manifest.tsv` (what ran), `meta.txt` (what was audited: commit, fingerprints, traits, settings hash),
 `versions.txt`, `coverage.txt`, each tool's output, `findings.tsv`, `digest.txt`, `report.html`, and the
-files Claude writes: `AUDIT.md`, `AUDIT.<lang>.md`, `scores.json`, `fixes.json`. After "Fix with Claude":
+files Claude writes: `AUDIT.md`, `AUDIT.<lang>.md`, `scores.json`, `fixes.json`, `FIX-PLAN.md`. After "Fix with Claude":
 `approved-fixes.json`, `fix-session.log`, `fix-report.md`.
 
 ## Tests

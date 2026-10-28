@@ -22,7 +22,7 @@ Install the free scanners the auditor uses (once; it skips anything already inst
 bash ~/.claude/skills/project-audit/scripts/scan.sh --install all
 ```
 
-Then, in Claude Code inside any project, ask: "audit this project". If a project needs a scanner that's missing, Claude asks before installing it. The install never uses admin rights, and never installs Node.js, Flutter or Dart for you (it prints the download link instead). On Windows, winget may ask you to accept its terms the first time.
+Then, in Claude Code inside any project, ask: "audit this project". If a project needs a scanner that's missing, Claude asks before installing it. The install never uses admin rights, and never installs Node.js, Flutter or Dart for you (it prints the download link instead). The Python tools (semgrep, ruff, zizmor, pip-audit, lizard, mobsfscan) each go into their own folder under `~/.project-audit/tools/`, so they never touch your other Python packages or clash with each other. On Windows, winget may ask you to accept its terms the first time.
 
 ## What's inside
 
@@ -42,11 +42,12 @@ Then, in Claude Code inside any project, ask: "audit this project". If a project
 | `report.html` | One web page for the run: verdict, findings you can filter and search, what was and wasn't checked, scores, the launch checklist and the written report. Open it in any browser (`bash scripts/scan.sh --open`). No internet needed. |
 | `digest.txt`, `findings.tsv` | A short digest and the list of findings with stable IDs |
 | `AUDIT.md`, `scores.json` | The written report and its scores (written by Claude; checked by `--verify-report`) |
+| `FIX-PLAN.md` | The step-by-step plan to fix what the report found, built only from the proposed fixes (`--verify-report` checks it covers them all and adds none) |
 | `manifest.tsv`, `meta.txt` | What ran and how it ended; what exactly was audited |
 
 **English and French.** The whole page switches language: its labels, the 43 launch-checklist items, plain-language descriptions of common finding rules, the check results, the written report and the proposed fixes. The tool translates its own text. The report and fixes come in both languages when Claude writes both; if only one language exists, `bash scripts/scan.sh --translate` (or the **Translate with Claude** button on the served page) asks Claude Code to produce the other, and `--verify-report` checks the two agree (same checklist marks, same verdict).
 
-**Approving fixes from the page.** The page lists the proposed fixes (`fixes.json`) with a tick box each, in English or French, light or dark. Run `bash scripts/scan.sh --serve` to open it from a small server that only listens on your own computer. Tick the fixes you approve, add a note if you like and click **Fix with Claude**: Claude Code starts in your project, makes a new git branch, applies the fixes one commit at a time, runs the scan again and writes `fix-report.md`. It never pushes. Safety: the server needs a random token, refuses requests from other websites, only accepts fixes listed in `fixes.json`, builds Claude's instructions itself, blocks `git push`, and refuses runs made with `--untrusted`. Without the server the page can still copy the approved fixes as a message for Claude or save them as `approved-fixes.json`.
+**Approving fixes from the page.** The page lists the proposed fixes (`fixes.json`) with a tick box each, in English or French, light or dark. Run `bash scripts/scan.sh --serve` to open it from a small server that only listens on your own computer (`--open` is a read-only view: no button). Tick the fixes you approve, add a note if you like and click **Fix with Claude**: Claude Code starts in your project (it must be a git repository), makes a new git branch, applies the fixes one commit at a time, runs the scan again and writes `fix-report.md`. It never pushes. Safety: the server needs a random token, refuses requests from other websites, only accepts fixes listed in `fixes.json`, builds Claude's instructions itself, blocks `git push`, and refuses runs made with `--untrusted`. Without the server the page can still copy the approved fixes as a message for Claude or save them as `approved-fixes.json`.
 
 Other commands: `--verdict` (the release verdict computed from the rules), `--verify-report`, `--all` (every project folder), `--untrusted`, `--check` / `--install`. The scripts that build the digest, the report check, the verdict and the web page are Python 3.8 or newer using only the standard library; the scanners themselves are separate programs.
 

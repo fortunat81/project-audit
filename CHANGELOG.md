@@ -7,6 +7,7 @@ so a report can always be matched to the version of the tool that made it.
 
 - The Python tools (semgrep, ruff, zizmor, pip-audit, lizard, mobsfscan) are installed by `scan.sh --install` each into its own virtual environment under `~/.project-audit/tools/` (override with `AUDIT_TOOLS_DIR`), no `pipx` needed. Nothing goes into the shared user packages, so mobsfscan's own pinned semgrep can no longer clash with another one. A tool already installed elsewhere keeps working; the isolated copy is used when it exists.
 - Every audit now ends with `FIX-PLAN.md` in the run folder: the step-by-step plan to fix what the report found, built only from the proposed fixes (`fixes.json`) and the report. `--verify-report` fails when it is missing, leaves out a proposed fix, names a step the report did not propose, or holds a secret-looking value.
+- Cleanup: `tests/run-tests.sh` refuses an option it does not know and has `--help` (an unknown option such as `--help` used to start, and wipe, a real test run); the stale `pipx ensurepath` advice is gone; `__pycache__` is ignored by git; README and ARCHITECTURE describe the fix plan, the isolated tool installs and the progress page.
 - Only one browser window opens per run (`--open` no longer opens a second one after the progress page).
 - Fixes from the first real-use test report (each has a test that failed first):
   - The scan now warns when its own copy has no git history or is behind GitHub (`tool_copy=` in `meta.txt`); an old copy used to run silently.

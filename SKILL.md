@@ -35,7 +35,7 @@ It prints the detected `PROFILE`, then one line per tool the applicable modules 
 - Never install Node.js, Flutter, Dart or another language SDK automatically. If `npx`, `flutter` or `dart` is `MISSING`, give the user the link and continue without those checks.
 - If an install fails, show the error in one or two lines and carry on without that tool.
 - On Windows the command may be a `winget` command. If winget asks to accept source or package terms, don't accept them for the user: tell them to run that one command once in PowerShell. Run `--check` again first (the script also looks in winget's links folder); only if the tool is still `MISSING`, tell the user to restart Claude Code.
-- After installing, run `--check` again. If a tool still isn't found, the user may need a new terminal (for pipx, `pipx ensurepath`).
+- After installing, run `--check` again. If a tool still isn't found, the user may need a new terminal (a tool installed with `winget`, `brew` or `go` appears in a new one; the Python tools live in their own folder and need no PATH change).
 - If the user says "don't ask again" about a tool, add its name on its own line to `audit/.skip-tools` (create `audit/` if needed). Remove the line if they change their mind.
 - In a scheduled or unattended run: install nothing, skip missing tools, list them in the report.
 
